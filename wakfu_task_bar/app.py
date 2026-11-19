@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk, filedialog, messagebox
 import threading
 import queue
 from pathlib import Path
@@ -86,6 +86,7 @@ class Game(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.close_game)
         self.after(TICK_MS, self.tick)
         self.after(150, self.process_update_events)
+        self.after(2500, self.check_updates)
 
     def _update_scroll(self, _):
         self.menu_canvas.configure(scrollregion=self.menu_canvas.bbox("all"))
