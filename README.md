@@ -1,36 +1,34 @@
 # Wakfu Task Bar Game
 
-Prototype **0.1** d'un idle RPG 2D à fenêtre redimensionnable, en Python et PySide6.
+Prototype **0.1 léger** d'un idle RPG 2D, développé en Python avec **Tkinter (bibliothèque standard)**.
 
-## Fonctionnalités de la version 0.1
+## Fonctionnalités
 
-- Combat automatique de démonstration : déplacement vers un Bouftou, attaques et réapparition.
-- Compteurs de victoires, XP et kamas (valeurs provisoires, **non sauvegardées**).
-- Menus en haut (40 %) et combat visible en bas (60 %), onglets toujours en bas.
-- Onglets de navigation préparés pour les prochaines versions.
-- Interface adaptée aux fenêtres redimensionnées.
+- Fenêtre redimensionnable, menus en haut (~40 %), combat toujours visible en bas (~60 %), navigation en bas.
+- Déplacement et attaque automatiques du héros contre un Bouftou de démonstration.
+- Compteurs temporaires de victoires, XP et kamas (non sauvegardés).
+- Onglets réservés aux systèmes futurs : inventaire, aptitudes, sorts et donjons.
 
-Les graphismes sont **provisoires** et les mécaniques d'inventaire, de donjon, de fusion et de sorts ne sont pas encore implémentées.
+Les graphismes et les valeurs sont provisoires. Aucun système complet de donjon ou d'équipement n'est encore intégré.
 
-## Lancer depuis les sources
+## Exécuter en Python
 
-Installer Python 3.12, puis :
+Installer Python 3.12 avec prise en charge Tkinter, puis :
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows PowerShell : .venv\\Scripts\\Activate.ps1
-pip install -r requirements.txt
 python main.py
 ```
 
-## Builds GitHub Actions
+Aucune dépendance Python externe nécessaire.
 
-Le workflow `build.yml` crée des archives pour macOS (Apple Silicon) et Windows. Aller dans **Actions → Build desktop apps → Run workflow** ou pousser un commit sur `main`. Télécharger ensuite les **Artifacts** du run.
+## Télécharger une application
 
-Les exécutables macOS ne sont pas signés/notarisés : Gatekeeper peut demander une autorisation lors du premier lancement.
+Le workflow GitHub Actions compile des applications **macOS Intel** (utilisables sur Apple Silicon via Rosetta 2) et **Windows** à l'aide de PyInstaller en mode `--onefile`. Dans l'onglet **Actions**, ouvrir le dernier workflow **Build desktop apps** réussi et télécharger son **Artifact**.
 
-## Structure
+Le binaire macOS n'est ni signé ni notarisé. Un avertissement Gatekeeper peut apparaître.
 
-- `main.py` : point d'entrée
-- `wakfu_task_bar/app.py` : interface et boucle de combat
-- `.github/workflows/build.yml` : compilation automatisée
+## Fichiers
+
+- `main.py` : point d'entrée.
+- `wakfu_task_bar/app.py` : interface et boucle de combat Tkinter.
+- `.github/workflows/build.yml` : builds automatiques.
