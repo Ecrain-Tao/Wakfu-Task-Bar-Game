@@ -79,8 +79,8 @@ class Game(tk.Tk):
         self.nav.place(relx=0, rely=1, y=-40, relwidth=1, height=40)
         for name in ("Combat", "Inventaire", "Aptitudes", "Sorts", "Donjons", "Réglages"):
             btn = tk.Button(self.nav, text=name, command=lambda n=name: self.select_tab(n),
-                            bg="#253c49", fg=FG, activebackground="#416377",
-                            activeforeground=FG, relief="flat", padx=5, bd=0)
+                            bg="#ffffff", fg="#000000", activebackground="#e5e5e5",
+                            activeforeground="#000000", relief="flat", padx=5, bd=0)
             btn.pack(side="left", fill="both", expand=True, padx=1, pady=2)
         self.select_tab("Combat")
         self.protocol("WM_DELETE_WINDOW", self.close_game)
