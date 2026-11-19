@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog
+import threading
+import queue
+from pathlib import Path
+from wakfu_task_bar.updater import VERSION, check_latest, download_asset
 
 TICK_MS = 50
 BG = "#15232e"
@@ -13,7 +17,7 @@ FG = "#e8e4d6"
 class Game(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Wakfu Task Bar Game — Prototype 0.1")
+        self.title(f"Wakfu Task Bar Game — {VERSION}")
         self.geometry("860x480")
         self.minsize(480, 300)
         self.configure(bg=BG)
@@ -26,6 +30,9 @@ class Game(tk.Tk):
         self.respawn_ticks = 0
         self.flash_ticks = 0
         self.active_tab = "Combat"
+        self.update_events = queue.Queue()
+        self.latest_release = None
+        self.update_busy = False
 
         self.top = tk.Frame(self, bg=PANEL, highlightbackground="#47606c", highlightthickness=1)
         self.top.place(relx=0, rely=0, relwidth=1, relheight=0.4, height=-16)
@@ -44,6 +51,21 @@ class Game(tk.Tk):
         self.info = tk.Label(self.menu_inner, bg=PANEL, fg=FG, anchor="nw",
                              justify="left", wraplength=700, font=("Arial", 11))
         self.info.pack(anchor="nw", fill="x", pady=4)
+        self.update_panel = tk.Frame(self.menu_inner, bg=PANEL)
+        self.update_status = tk.Label(self.update_panel, text=f"Version installée : {VERSION}",
+                                      bg=PANEL, fg=FG, justify="left", anchor="w", wraplength=600)
+        self.update_status.pack(fill="x", pady=5)
+        self.check_button = tk.Button(self.update_panel, text="Vérifier les mises à jour", command=self.check_updates)
+        self.check_button.pack(anchor="w", pady=4)
+        self.download_button = tk.Button(self.update_panel, text="Télécharger la mise à jour",
+                                         command=self.download_update, state="disabled")
+        self.download_button.pack(anchor="w", pady=4)
+        self.progress = ttk.Progressbar(self.update_panel, maximum=100)
+        self.progress.pack(fill="x", pady=4)
+        self.update_note = tk.Label(self.update_panel,
+                                    text="Installation manuelle pour cette première version du système.",
+                                    bg=PANEL, fg="#b4c4c8", anchor="w", justify="left", wraplength=600)
+        self.update_note.pack(fill="x", pady=4)
 
         self.battle = tk.Canvas(self, bg="#172b35", highlightthickness=0)
         self.battle.place(relx=0, rely=0.4, y=-16, relwidth=1, relheight=0.6, height=-24)
@@ -51,13 +73,14 @@ class Game(tk.Tk):
 
         self.nav = tk.Frame(self, bg=BG)
         self.nav.place(relx=0, rely=1, y=-40, relwidth=1, height=40)
-        for name in ("Combat", "Inventaire", "Aptitudes", "Sorts", "Donjons"):
+        for name in ("Combat", "Inventaire", "Aptitudes", "Sorts", "Donjons", "Réglages"):
             btn = tk.Button(self.nav, text=name, command=lambda n=name: self.select_tab(n),
                             bg="#253c49", fg=FG, activebackground="#416377",
                             activeforeground=FG, relief="flat", padx=5, bd=0)
             btn.pack(side="left", fill="both", expand=True, padx=1, pady=2)
         self.select_tab("Combat")
         self.after(TICK_MS, self.tick)
+        self.after(150, self.process_update_events)
 
     def _update_scroll(self, _):
         self.menu_canvas.configure(scrollregion=self.menu_canvas.bbox("all"))
@@ -69,6 +92,10 @@ class Game(tk.Tk):
     def select_tab(self, name):
         self.active_tab = name
         self.heading.configure(text=name)
+        if name == "Réglages":
+            self.update_panel.pack(fill="x", pady=4)
+        else:
+            self.update_panel.pack_forget()
         self.refresh_menu()
 
     def refresh_menu(self):
@@ -79,7 +106,82 @@ class Game(tk.Tk):
             "Sorts": "À venir : attaque de base, sort 1, sort 2 et priorités.",
             "Donjons": "À venir : donjons d'Astrub, progression automatique et Boss Ultimes.",
         }
+        content["Réglages"] = "Mises à jour depuis GitHub Releases."
         self.info.configure(text=content[self.active_tab].replace("\\n", "\n"))
+
+    def check_updates(self):
+        if self.update_busy:
+            return
+        self.update_busy = True
+        self.check_button.configure(state="disabled")
+        self.download_button.configure(state="disabled")
+        self.update_status.configure(text="Recherche de la dernière version…")
+        def worker():
+            try:
+                self.update_events.put(("checked", check_latest()))
+            except Exception as exc:
+                self.update_events.put(("error", str(exc)))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def download_update(self):
+        if self.update_busy or not self.latest_release:
+            return
+        asset = self.latest_release.get("asset")
+        if not asset:
+            return
+        folder = filedialog.askdirectory(title="Choisir le dossier de téléchargement")
+        if not folder:
+            return
+        self.update_busy = True
+        self.download_button.configure(state="disabled")
+        self.check_button.configure(state="disabled")
+        self.progress["value"] = 0
+        self.update_status.configure(text="Téléchargement en cours…")
+        def worker():
+            try:
+                path = download_asset(
+                    asset, Path(folder),
+                    lambda done, total: self.update_events.put(("progress", (done, total)))
+                )
+                self.update_events.put(("downloaded", str(path)))
+            except Exception as exc:
+                self.update_events.put(("error", str(exc)))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def process_update_events(self):
+        try:
+            while True:
+                kind, value = self.update_events.get_nowait()
+                if kind == "progress":
+                    done, total = value
+                    if total:
+                        self.progress["value"] = min(100, done * 100 / total)
+                    self.update_status.configure(text=f"Téléchargement : {done // 1024} Ko")
+                elif kind == "checked":
+                    self.update_busy = False
+                    self.latest_release = value
+                    self.check_button.configure(state="normal")
+                    if value["newer"] and value["asset"]:
+                        self.update_status.configure(text=f"Nouvelle version disponible : {value['tag']}")
+                        self.download_button.configure(state="normal")
+                    elif value["newer"]:
+                        self.update_status.configure(text=f"Version {value['tag']} sans fichier pour ce système.")
+                    else:
+                        self.update_status.configure(text=f"Vous avez la dernière version ({VERSION}).")
+                elif kind == "downloaded":
+                    self.update_busy = False
+                    self.check_button.configure(state="normal")
+                    self.download_button.configure(state="normal")
+                    self.progress["value"] = 100
+                    self.update_status.configure(text=f"Archive téléchargée : {value}")
+                    self.update_note.configure(text="Décompressez l'archive et remplacez l'application après fermeture.")
+                elif kind == "error":
+                    self.update_busy = False
+                    self.check_button.configure(state="normal")
+                    self.update_status.configure(text=f"Mise à jour indisponible : {value}")
+        except queue.Empty:
+            pass
+        self.after(150, self.process_update_events)
 
     def draw(self):
         c = self.battle
