@@ -13,8 +13,10 @@ jobs:
         include:
           - os: macos-15-intel
             artifact: Wakfu-Task-Bar-Game-macOS-Intel
+            archive: Wakfu-Task-Bar-Game-macOS-Intel.zip
           - os: windows-latest
             artifact: Wakfu-Task-Bar-Game-Windows
+            archive: Wakfu-Task-Bar-Game-Windows.zip
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -29,6 +31,22 @@ jobs:
           pip install pyinstaller
       - name: Package
         run: pyinstaller --noconfirm --clean --onefile --windowed --name Wakfu-Task-Bar-Game main.py
+      - name: Create update archive
+        shell: python
+        run: |
+          from pathlib import Path
+          from zipfile import ZipFile, ZIP_DEFLATED
+          root = Path("dist")
+          with ZipFile("${{ matrix.archive }}", "w", ZIP_DEFLATED) as z:
+              for file in root.rglob("*"):
+                  if file.is_file():
+                      z.write(file, file.relative_to(root))
+      - name: Upload update archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-update
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
