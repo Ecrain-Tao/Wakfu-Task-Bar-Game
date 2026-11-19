@@ -10,7 +10,7 @@ import urllib.request
 import certifi
 from pathlib import Path
 
-VERSION = "0.2.1"
+VERSION = "0.2.2"
 RELEASES_API = "https://api.github.com/repos/Ecrain-Tao/Wakfu-Task-Bar-Game-Releases/releases/latest"
 USER_AGENT = "Wakfu-Task-Bar-Game/" + VERSION
 
