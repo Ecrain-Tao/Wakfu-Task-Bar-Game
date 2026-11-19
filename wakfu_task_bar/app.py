@@ -7,6 +7,7 @@ import threading
 import queue
 from pathlib import Path
 from wakfu_task_bar.updater import VERSION, check_latest, download_asset
+from wakfu_task_bar.engine import GameState, DUNGEONS, xp_needed, MAX_LEVEL
 
 TICK_MS = 50
 BG = "#15232e"
@@ -21,14 +22,9 @@ class Game(tk.Tk):
         self.geometry("860x480")
         self.minsize(480, 300)
         self.configure(bg=BG)
-        self.kills = self.xp = self.kamas = 0
-        self.player_x = 70.0
-        self.enemy_x = 350.0
-        self.player_hp = 100
-        self.enemy_hp = 45
-        self.attack_elapsed = 0
-        self.respawn_ticks = 0
-        self.flash_ticks = 0
+        self.state = GameState()
+        self.state.load()
+        self.last_saved = 0
         self.active_tab = "Combat"
         self.update_events = queue.Queue()
         self.latest_release = None
@@ -51,6 +47,14 @@ class Game(tk.Tk):
         self.info = tk.Label(self.menu_inner, bg=PANEL, fg=FG, anchor="nw",
                              justify="left", wraplength=700, font=("Arial", 11))
         self.info.pack(anchor="nw", fill="x", pady=4)
+        self.dungeon_panel = tk.Frame(self.menu_inner, bg=PANEL)
+        self.auto_var = tk.BooleanVar(value=self.state.auto_progress)
+        tk.Checkbutton(self.dungeon_panel, text="Progression automatique", variable=self.auto_var,
+                       command=self.toggle_auto, bg=PANEL, fg=FG, selectcolor=BG,
+                       activebackground=PANEL, activeforeground=FG).pack(anchor="w")
+        for i, dungeon in enumerate(DUNGEONS):
+            tk.Button(self.dungeon_panel, text=dungeon["name"],
+                      command=lambda index=i: self.choose_dungeon(index)).pack(anchor="w", pady=2)
         self.update_panel = tk.Frame(self.menu_inner, bg=PANEL)
         self.update_status = tk.Label(self.update_panel, text=f"Version installée : {VERSION}",
                                       bg=PANEL, fg=FG, justify="left", anchor="w", wraplength=600)
@@ -79,6 +83,7 @@ class Game(tk.Tk):
                             activeforeground=FG, relief="flat", padx=5, bd=0)
             btn.pack(side="left", fill="both", expand=True, padx=1, pady=2)
         self.select_tab("Combat")
+        self.protocol("WM_DELETE_WINDOW", self.close_game)
         self.after(TICK_MS, self.tick)
         self.after(150, self.process_update_events)
 
@@ -96,18 +101,43 @@ class Game(tk.Tk):
             self.update_panel.pack(fill="x", pady=4)
         else:
             self.update_panel.pack_forget()
+        if name == "Donjons":
+            self.dungeon_panel.pack(fill="x", pady=4)
+        else:
+            self.dungeon_panel.pack_forget()
         self.refresh_menu()
 
     def refresh_menu(self):
+        state = self.state
+        d = state.dungeon
         content = {
-            "Combat": f"Combat automatique en cours.\\n\\nVictoires : {self.kills}  |  XP : {self.xp}  |  Kamas : {self.kamas}\\n\\nLe héros avance vers le Bouftou, attaque, puis recommence.",
-            "Inventaire": "À venir : Équipement | Sac | Coffres | Fusion / Vente.\\n\\n14 emplacements d'équipement prévus.",
-            "Aptitudes": "À venir : Intelligence et Force, répartition et réinitialisation des points.",
-            "Sorts": "À venir : attaque de base, sort 1, sort 2 et priorités.",
-            "Donjons": "À venir : donjons d'Astrub, progression automatique et Boss Ultimes.",
+            "Combat": (
+                f"Niveau {state.level} | PV {state.hp}/{state.max_hp} | "
+                f"XP {state.xp}/{xp_needed(state.level) if state.level < MAX_LEVEL else 'MAX'}\\n"
+                f"Victoires : {state.kills} | Kamas : {state.kamas} | Coffres : {state.chests}\\n"
+                f"Donjon : {d['name']} — Salle {state.room + 1}/{len(d['rooms']) + 1}\\n"
+                f"{state.message}"
+            ),
+            "Inventaire": f"Coffres collectés : {state.chests}\\nÉquipement, sac, fusion et vente : à venir.",
+            "Aptitudes": f"Niveau {state.level}\\nPoints d'aptitudes : à venir.",
+            "Sorts": "Attaque de base automatique. Sorts et priorités : à venir.",
+            "Donjons": f"Donjon actuel : {d['name']}\\nDonjons validés : {len(state.wins)}/{len(DUNGEONS)}",
+            "Réglages": "Vérifier et télécharger les mises à jour publiques.",
         }
-        content["Réglages"] = "Mises à jour depuis GitHub Releases."
         self.info.configure(text=content[self.active_tab].replace("\\n", "\n"))
+
+    def toggle_auto(self):
+        self.state.auto_progress = self.auto_var.get()
+        self.state.save()
+
+    def choose_dungeon(self, index):
+        self.state.select_dungeon(index)
+        self.state.save()
+        self.refresh_menu()
+
+    def close_game(self):
+        self.state.save()
+        self.destroy()
 
     def check_updates(self):
         if self.update_busy:
@@ -191,49 +221,30 @@ class Game(tk.Tk):
         ground = h - 30
         c.create_rectangle(0, ground, w, h, fill="#29483b", outline="")
         c.create_line(0, ground, w, ground, fill="#54765d", width=2)
-        scale = min(1.0, max(0.35, w / 520))
-        for x, hp, max_hp, color, name in (
-            (self.player_x * scale, self.player_hp, 100, "#5ea5db", "Héros"),
-            (self.enemy_x * scale, self.enemy_hp, 45, "#d37b72", "Bouftou"),
-        ):
-            c.create_oval(x - 17, ground - 54, x + 17, ground - 8,
+        state = self.state
+        all_x = [state.player_x] + [m.x for m in state.monsters]
+        extent = max(440, max(all_x, default=440) + 30)
+        scale = min(1.0, max(0.25, (w - 35) / extent))
+        entities = [(state.player_x, state.hp, state.max_hp, "#5ea5db", "Héros")]
+        entities += [(m.x, m.hp, m.max_hp, "#d37b72", m.name) for m in state.monsters if m.hp > 0]
+        for x, hp, max_hp, color, name in entities:
+            x *= scale
+            c.create_oval(x - 14, ground - 47, x + 14, ground - 8,
                           fill=color, outline="#d4e5e3", width=2)
-            c.create_rectangle(x - 24, ground - 67, x + 24, ground - 61,
+            c.create_rectangle(x - 21, ground - 58, x + 21, ground - 53,
                                fill="#4c252c", outline="")
-            c.create_rectangle(x - 24, ground - 67, x - 24 + 48 * max(0, hp) / max_hp,
-                               ground - 61, fill="#67c68a", outline="")
-            c.create_text(x, ground - 81, text=name, fill=FG, font=("Arial", 10))
-        if self.flash_ticks:
-            c.create_line(self.player_x * scale + 20, ground - 38,
-                          self.enemy_x * scale - 18, ground - 38,
-                          fill="#f7d47b", width=3)
+            c.create_rectangle(x - 21, ground - 58, x - 21 + 42 * hp / max_hp,
+                               ground - 53, fill="#67c68a", outline="")
+            c.create_text(x, ground - 72, text=name, fill=FG, font=("Arial", 9))
 
     def tick(self):
-        if self.respawn_ticks:
-            self.respawn_ticks -= 1
-            if self.respawn_ticks == 0:
-                self.enemy_hp = 45
-                self.enemy_x = 350
-                self.player_x = 70
-                self.player_hp = 100
-        else:
-            self.flash_ticks = max(0, self.flash_ticks - 1)
-            distance = self.enemy_x - self.player_x
-            if distance > 62:
-                self.player_x += min(2.5, distance - 62)
-            else:
-                self.attack_elapsed += TICK_MS
-                if self.attack_elapsed >= 850:
-                    self.attack_elapsed = 0
-                    self.flash_ticks = 3
-                    self.enemy_hp = max(0, self.enemy_hp - 9)
-                    if self.enemy_hp == 0:
-                        self.kills += 1
-                        self.xp += 10
-                        self.kamas += 3
-                        self.respawn_ticks = 12
-                        if self.active_tab == "Combat":
-                            self.refresh_menu()
+        self.state.tick(TICK_MS / 1000)
+        self.last_saved += TICK_MS
+        if self.last_saved >= 10000:
+            self.last_saved = 0
+            self.state.save()
+        if self.active_tab in ("Combat", "Donjons", "Inventaire"):
+            self.refresh_menu()
         self.draw()
         self.after(TICK_MS, self.tick)
 
