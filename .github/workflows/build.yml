@@ -11,8 +11,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
-            artifact: Wakfu-Task-Bar-Game-macOS-Apple-Silicon
+          - os: macos-15-intel
+            artifact: Wakfu-Task-Bar-Game-macOS-Intel
           - os: windows-latest
             artifact: Wakfu-Task-Bar-Game-Windows
     runs-on: ${{ matrix.os }}
