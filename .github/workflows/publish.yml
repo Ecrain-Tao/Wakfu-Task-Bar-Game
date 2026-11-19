@@ -68,6 +68,7 @@ jobs:
             echo "::error::Set PUBLIC_RELEASES_TOKEN in the private repository's Actions secrets"
             exit 1
           fi
+          VERSION="v${VERSION#v}"
           if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::Invalid release version: ${VERSION}"
             exit 1
