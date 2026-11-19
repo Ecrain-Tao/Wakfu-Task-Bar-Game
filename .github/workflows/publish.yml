@@ -30,7 +30,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install packaging tools
-        run: python -m pip install --upgrade pip pyinstaller
+        run: python -m pip install --upgrade pip pyinstaller certifi
       - name: Build
         run: pyinstaller --noconfirm --clean --onefile --windowed --name Wakfu-Task-Bar-Game main.py
       - name: Archive application
