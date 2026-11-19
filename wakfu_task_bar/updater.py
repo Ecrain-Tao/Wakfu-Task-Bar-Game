@@ -4,10 +4,13 @@ from __future__ import annotations
 import json
 import platform
 import re
+import ssl
 import urllib.request
+
+import certifi
 from pathlib import Path
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 RELEASES_API = "https://api.github.com/repos/Ecrain-Tao/Wakfu-Task-Bar-Game-Releases/releases/latest"
 USER_AGENT = "Wakfu-Task-Bar-Game/" + VERSION
 
@@ -19,11 +22,16 @@ def version_parts(version: str) -> tuple[int, ...]:
     return tuple(int(p) for p in clean.split("."))
 
 
+def tls_context():
+    """Verify HTTPS with a bundled, maintained CA trust bundle."""
+    return ssl.create_default_context(cafile=certifi.where())
+
+
 def check_latest() -> dict:
     request = urllib.request.Request(
         RELEASES_API, headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"}
     )
-    with urllib.request.urlopen(request, timeout=12) as response:
+    with urllib.request.urlopen(request, timeout=12, context=tls_context()) as response:
         data = json.load(response)
     tag = data.get("tag_name", "")
     latest = version_parts(tag)
@@ -51,7 +59,7 @@ def download_asset(asset: dict, destination: Path, progress=None) -> Path:
     partial = destination / (name + ".part")
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
-        with urllib.request.urlopen(request, timeout=30) as response, partial.open("wb") as stream:
+        with urllib.request.urlopen(request, timeout=30, context=tls_context()) as response, partial.open("wb") as stream:
             total = int(response.headers.get("Content-Length", "0"))
             received = 0
             while True:
