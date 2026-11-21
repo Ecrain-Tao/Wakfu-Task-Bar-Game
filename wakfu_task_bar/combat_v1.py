@@ -405,6 +405,13 @@ class Battle:
             self.step = step
             self.time += step
             fighters = self.players+self.monsters
+            # Also detect deaths applied externally (e.g. a scripted kill).
+            if not self.finished:
+                players_alive = any(f.alive for f in self.players)
+                monsters_alive = any(f.alive for f in self.monsters)
+                if not players_alive or not monsters_alive:
+                    self.finished = True
+                    self.winner = 1 if players_alive else 2
             for f in fighters:
                 if not f.alive:
                     f.fade = max(0,f.fade-step)
