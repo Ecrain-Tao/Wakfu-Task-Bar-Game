@@ -100,5 +100,34 @@ class CombatV1Tests(unittest.TestCase):
         s.configure_spells(equipped=["uppercut"],priority=["uppercut","charge"])
         self.assertEqual(s.to_dict()["equipped"],["uppercut"])
 
+    def test_opposing_hitboxes_stop_at_edges(self):
+        p = Fighter("Iop", 0, 100, 100, radius=14, reach=0, speed=100)
+        p.equipped = []
+        m = Fighter("Bouftou", 80, 100, 100, side=2, radius=14,
+                    reach=0, speed=0)
+        b = Battle([p], [m])
+        b.tick(.8)
+        self.assertLessEqual(p.x, m.x - p.radius - m.radius + 1e-6)
+        self.assertEqual(b.distance(p,m),max(0,abs(p.x-m.x)-28))
+
+    def test_monster_allies_can_overlap(self):
+        p = Fighter("Iop", 0, 100, 100, radius=14)
+        a = Fighter("Bouftou A", 80, 100, 100, side=2, radius=14)
+        b = Fighter("Bouftou B", 80, 100, 100, side=2, radius=14)
+        battle = Battle([p],[a,b])
+        self.assertEqual(a.x,b.x)
+        self.assertEqual(battle.distance(p,a),52)
+
+    def test_charge_stops_at_enemy_edge(self):
+        p = Fighter("Iop", 0, 100, 100, radius=14)
+        front = Fighter("Front", 70, 20, 20, side=2, radius=14)
+        back = Fighter("Back", 150, 20, 20, side=2, radius=14)
+        battle = Battle([p],[front,back])
+        battle.start(p,"charge",back)
+        battle.tick(.61)
+        self.assertAlmostEqual(p.x,42)
+        self.assertEqual(front.hp,17)
+        self.assertEqual(back.hp,20)
+
 if __name__ == "__main__":
     unittest.main()
