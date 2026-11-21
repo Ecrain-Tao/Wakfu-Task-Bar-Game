@@ -63,5 +63,42 @@ class CombatV1Tests(unittest.TestCase):
         p.update_loadout(pa=1,pw=1)
         self.assertEqual(p.active_spells(),["uppercut","charge"])
 
+    def test_charge_hits_first_enemy(self):
+        p = Fighter("Iop",0,100,100)
+        front = Fighter("Front",70,20,20,side=2)
+        back = Fighter("Back",140,20,20,side=2)
+        b = Battle([p],[front,back])
+        b.start(p,"charge",back)
+        b.tick(.65)
+        self.assertEqual(front.hp,17)
+        self.assertEqual(back.hp,20)
+
+    def test_monster_first_attack_without_wait(self):
+        p = Fighter("Iop",0,100,100)
+        p.equipped=[]
+        m = Fighter("Monster",20,100,100,side=2,attack_animation=.5)
+        b = Battle([p],[m])
+        b.tick(.02)
+        self.assertEqual(m.action,"monster_basic")
+
+    def test_game_room_transition_preserves_hp(self):
+        from wakfu_task_bar.engine import GameState
+        s = GameState()
+        s.hp = 77
+        s.hero.hp = 77
+        s.battle.finished = True
+        s.battle.winner = 1
+        s.tick(.05)
+        self.assertGreater(s.room_exit,0)
+        s.tick(1)
+        self.assertEqual(s.room,1)
+        self.assertEqual(s.hp,77)
+
+    def test_game_save_loadout(self):
+        from wakfu_task_bar.engine import GameState
+        s = GameState()
+        s.configure_spells(equipped=["uppercut"],priority=["uppercut","charge"])
+        self.assertEqual(s.to_dict()["equipped"],["uppercut"])
+
 if __name__ == "__main__":
     unittest.main()
