@@ -11,6 +11,14 @@ class EngineTests(unittest.TestCase):
         state = GameState()
         self.assertEqual(len(state.monsters), DUNGEONS[0]["rooms"][0])
 
+    def test_only_mere_michou_chachas(self):
+        self.assertEqual(len(DUNGEONS), 1)
+        self.assertEqual(DUNGEONS[0]["name"], "Mère Michou")
+        self.assertEqual(DUNGEONS[0]["enemy"], "Chacha")
+        state = GameState()
+        self.assertTrue(all(m.name == "Chacha" for m in state.monsters))
+        self.assertFalse(state.select_dungeon(1))
+
     def test_dungeon_locked(self):
         state = GameState()
         self.assertFalse(state.select_dungeon(1))
