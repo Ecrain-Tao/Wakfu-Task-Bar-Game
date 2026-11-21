@@ -294,7 +294,7 @@ class Battle:
         target = actor.action_target
         if action == "jabs":
             # Four distinct impacts; redirect after death to any living enemy in reach.
-            element = ELEMENTS[actor.impact_index]
+            element = ELEMENTS[actor.impact_index - 1]
             if not target or not target.alive:
                 target = self.target(actor,40)
             if target and target.alive:
