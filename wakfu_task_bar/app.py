@@ -318,23 +318,24 @@ class Game(tk.Tk):
                           font=("Arial",9,"bold" if front else "normal"))
             return x,base
 
-        # Spread enemy portraits vertically only for readability; simulation positions stay unchanged.
-        for i, monster in enumerate(enemies):
-            draw_fighter(monster,"#d37b72", -min(i,3)*18)
+        # Overlapping monsters remain separate in a visual depth stack.
+        ordered_enemies = sorted(enemies, key=lambda m: m.x, reverse=True)
+        for i, monster in enumerate(ordered_enemies):
+            draw_fighter(monster,"#d37b72", -(i % 4)*28)
         if hero.action == "wrath":
             radius = 100 * scale
             x = hero.x * scale
             c.create_oval(x-radius,ground-30-radius,x+radius,ground-30+radius,
                           outline="#f46d4e",width=3)
         # Hero is always drawn last, and a little lower than enemies when overlapping.
-        hero_offset = 5 if any(abs(m.x-hero.x)*scale < 45 for m in enemies) else 0
+        hero_offset = 0
         draw_fighter(hero,"#5ea5db",hero_offset,True)
 
         for hit in self.floating_hits:
             fighter = hit["fighter"]
             x = fighter.x*scale
             offset = hero_offset if fighter is hero else -min(
-                next((i for i,m in enumerate(enemies) if m is fighter),0),3)*18
+                next((i for i,m in enumerate(ordered_enemies) if m is fighter),0),3)*28
             y = ground+offset-94-(self.combat_clock-hit["time"])*22
             c.create_text(x,y,text=hit["text"],fill=hit["color"],
                           font=("Arial",12,"bold"))
