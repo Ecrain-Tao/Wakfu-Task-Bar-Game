@@ -184,7 +184,7 @@ class Battle:
         return self.monsters if actor.side == 1 else self.players
 
     def distance(self, a, b):
-        return max(0, abs(a.x-b.x)-b.radius)
+        return max(0, abs(a.x-b.x)-a.radius-b.radius)
 
     def target(self, actor, reach=None):
         candidates = [f for f in self.opponents(actor) if f.alive and (reach is None or self.distance(actor,f) <= reach + 1e-7)]
@@ -278,15 +278,18 @@ class Battle:
             target = self.target(actor)
             if target and self.distance(actor,target) > actor.reach:
                 step = min(actor.speed * self.step, self.distance(actor,target)-actor.reach)
-                # Opponents block movement; allies do not.
-                new_x = actor.x + step*(1 if target.x>actor.x else -1)
-                for blocker in self.opponents(actor):
-                    if not blocker.alive:
-                        continue
-                    old_delta = blocker.x-actor.x
-                    new_delta = blocker.x-new_x
-                    if old_delta*new_delta <= 0 or abs(new_delta)<blocker.radius:
-                        new_x = blocker.x - (blocker.radius if old_delta>=0 else -blocker.radius)
+                direction = 1 if target.x > actor.x else -1
+                new_x = actor.x + step * direction
+                # Allies may overlap. Opposing hitboxes never cross or overlap:
+                # resolve against the first blocker along the travel direction.
+                blockers = [other for other in self.opponents(actor)
+                            if other.alive and (other.x-actor.x)*direction >= -1e-7]
+                blockers.sort(key=lambda other: (other.x-actor.x)*direction)
+                for blocker in blockers:
+                    contact = blocker.x - direction*(actor.radius+blocker.radius)
+                    if (new_x-contact)*direction >= -1e-7:
+                        new_x = min(new_x,contact) if direction > 0 else max(new_x,contact)
+                        break
                 actor.x = new_x
 
     def impact(self, actor, moment):
@@ -363,7 +366,7 @@ class Battle:
                             and (f.x-proposed)*direction <= f.radius+1e-7]
                 if blockers:
                     victim = min(blockers,key=lambda f:abs(f.x-actor.x))
-                    actor.x = victim.x-direction*victim.radius
+                    actor.x = victim.x-direction*(actor.radius+victim.radius)
                     actor.action_target = victim
                     actor.charge_intercepted = True
                 else:
