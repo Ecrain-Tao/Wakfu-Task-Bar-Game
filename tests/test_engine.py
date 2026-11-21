@@ -36,8 +36,9 @@ class EngineTests(unittest.TestCase):
 
     def test_versions(self):
         self.assertLess(version_parts("v0.2.0"), version_parts("v0.3.0"))
+        self.assertLess(version_parts("v0.2.0-beta"), version_parts("v0.2.0"))
         with self.assertRaises(ValueError):
-            version_parts("v0.2.0-beta")
+            version_parts("v0.2.0-unknown")
 
 
 if __name__ == "__main__":
