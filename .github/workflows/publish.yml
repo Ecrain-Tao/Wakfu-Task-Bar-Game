@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version, e.g. v0.2.0 (must match app VERSION)'
+        description: 'Choose release version, e.g. v0.3.1-alpha or v0.4.0'
         required: true
 
 permissions:
@@ -15,6 +15,8 @@ permissions:
 
 jobs:
   package:
+    env:
+      WAKFU_RELEASE_VERSION: ${{ github.event.inputs.version || github.ref_name }}
     strategy:
       fail-fast: false
       matrix:
@@ -29,19 +31,40 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Embed selected version in the compiled app
+        shell: python
+        run: |
+          import os
+          import re
+          from pathlib import Path
+          requested = os.environ["WAKFU_RELEASE_VERSION"].strip()
+          if not re.fullmatch(r"v?\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)(?:\.\d+)?)?", requested):
+              raise SystemExit("Unsupported release version: " + requested)
+          chosen = requested.removeprefix("v")
+          Path("wakfu_task_bar/_build_version.py").write_text(
+              "VERSION = " + repr(chosen) + "\n", encoding="utf-8"
+          )
+          print("Building Wakfu Task Bar Game v" + chosen)
       - name: Install packaging tools
         run: python -m pip install --upgrade pip pyinstaller certifi
+      - name: Run tests
+        run: python -m unittest discover -s tests
       - name: Build
-        run: pyinstaller --noconfirm --clean --onefile --windowed --name Wakfu-Task-Bar-Game main.py
+        run: pyinstaller --noconfirm --clean --onefile --windowed --add-data 'assets/sprites:assets/sprites' --name Wakfu-Task-Bar-Game main.py
       - name: Archive application
         shell: python
         run: |
+          import os
           from pathlib import Path
           from zipfile import ZipFile, ZIP_DEFLATED
           with ZipFile("${{ matrix.archive }}", "w", ZIP_DEFLATED) as archive:
               for item in Path("dist").rglob("*"):
                   if item.is_file():
                       archive.write(item, item.relative_to("dist"))
+              archive.writestr(
+                  "VERSION.txt",
+                  os.environ["WAKFU_RELEASE_VERSION"].strip().removeprefix("v") + "\n",
+              )
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.os }}
@@ -52,6 +75,10 @@ jobs:
     needs: package
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -69,12 +96,33 @@ jobs:
             exit 1
           fi
           VERSION="v${VERSION#v}"
-          if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ ! "${VERSION}" =~ ^v[0-9]+[.][0-9]+[.][0-9]+(-(alpha|beta|rc)([.][0-9]+)?)?$ ]]; then
             echo "::error::Invalid release version: ${VERSION}"
             exit 1
+          fi
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from zipfile import ZipFile
+          expected = os.environ["VERSION"].strip().removeprefix("v")
+          archives = sorted(Path("release-files").glob("*.zip"))
+          names = {"Wakfu-Task-Bar-Game-macOS-Intel.zip", "Wakfu-Task-Bar-Game-Windows.zip"}
+          if {archive.name for archive in archives} != names:
+              raise SystemExit("Both macOS and Windows archives are required")
+          for archive in archives:
+              with ZipFile(archive) as package:
+                  actual = package.read("VERSION.txt").decode("utf-8").strip()
+              if actual != expected:
+                  raise SystemExit(f"Archive {archive.name} contains v{actual}, expected v{expected}")
+          print(f"Verified {len(archives)} archives for v{expected}")
+          PY
+          FLAGS=(--latest)
+          NOTES="Nouvelle version du jeu pour macOS Intel et Windows."
+          if [[ "${VERSION}" == *-* ]]; then
+            FLAGS=(--prerelease)
+            NOTES="Version expérimentale : moteur de combat Iop V1. Sauvegardez vos données avant de tester."
           fi
           gh release create "${VERSION}" release-files/*.zip \
             --repo Ecrain-Tao/Wakfu-Task-Bar-Game-Releases \
             --title "Wakfu Task Bar Game ${VERSION}" \
-            --notes "Nouvelle version du jeu pour macOS Intel et Windows." \
-            --latest
+            --notes "${NOTES}" "${FLAGS[@]}"

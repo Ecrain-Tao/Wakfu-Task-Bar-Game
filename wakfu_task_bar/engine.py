@@ -6,15 +6,17 @@ import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from .combat_v1 import Battle, Fighter, Stats, DEFAULT_PRIORITY
 
 SAVE_DIR = Path.home() / ".wakfu-task-bar-game"
 SAVE_FILE = SAVE_DIR / "save.json"
 
+# Donjon unique de la première version jouable.
 DUNGEONS = (
-    {"name": "Prairie des Bouftous", "level": 1, "rooms": (2, 3, 2), "enemy": "Bouftou", "hp": 35, "damage": 3, "xp": 10, "kamas": 3},
-    {"name": "Sous-bois des Tofus", "level": 4, "rooms": (3, 3, 4), "enemy": "Tofu", "hp": 27, "damage": 4, "xp": 12, "kamas": 4},
-    {"name": "Égouts d'Astrub", "level": 8, "rooms": (3, 4, 4), "enemy": "Larve", "hp": 54, "damage": 5, "xp": 18, "kamas": 6},
+    {"name": "Mère Michou", "level": 1, "rooms": (2, 3, 2),
+     "enemy": "Chacha", "hp": 35, "damage": 3, "xp": 10, "kamas": 3},
 )
+
 MAX_LEVEL = 35
 
 
@@ -49,6 +51,11 @@ class GameState:
         self.attack_timer = 0.0
         self.respawn_timer = 0.0
         self.message = ""
+        self.priority = list(DEFAULT_PRIORITY)
+        self.equipped = list(DEFAULT_PRIORITY)
+        self.pa, self.pw = 6, 2
+        self.battle = None
+        self.room_exit = 0.0
         self.spawn_room()
 
     @property
@@ -60,18 +67,51 @@ class GameState:
         return DUNGEONS[self.dungeon_index]
 
     def spawn_room(self):
+        old_hero = getattr(self, "hero", None)
+        old_cooldowns = dict(old_hero.cooldowns) if old_hero and old_hero.alive else {}
+        old_uppercut = old_hero.uppercut_count if old_hero and old_hero.alive else 0
+        old_basic_progress = old_hero.basic_progress if old_hero and old_hero.alive else 1.0
         self.player_x = 60.0
         self.attack_timer = 0.0
         self.monsters = []
         boss = self.room >= len(self.dungeon["rooms"])
         count = 1 if boss else self.dungeon["rooms"][self.room]
         hp = self.dungeon["hp"] * (3 if boss else 1)
+        self.hero = Fighter("Iop", 60.0, self.hp, self.max_hp, side=1, speed=95, radius=14)
+        self.hero.priority = list(self.priority)
+        self.hero.equipped = list(self.equipped)
+        self.hero.pa, self.hero.pw = self.pa, self.pw
+        self.hero.cooldowns = old_cooldowns
+        self.hero.uppercut_count = old_uppercut
+        self.hero.basic_progress = old_basic_progress
+        enemies = []
         for i in range(count):
-            self.monsters.append(Monster(
+            monster = Monster(
                 ("Chef " if boss else "") + self.dungeon["enemy"],
                 hp, hp, 260.0 + i * 66.0,
                 self.dungeon["damage"] * (2 if boss else 1),
-            ))
+            )
+            self.monsters.append(monster)
+            enemies.append(Fighter(monster.name,monster.x,monster.hp,monster.max_hp,
+                                   damage=monster.damage,side=2,speed=48,reach=45,
+                                   attack_animation=.5,attack_wait=1.4,
+                                   radius=20 if boss else 14))
+        self.battle = Battle([self.hero], enemies)
+        self.room_exit = 0.0
+        self._sync_battle()
+
+    def _sync_battle(self):
+        self.player_x = self.hero.x
+        self.hp = self.hero.hp
+        for old, new in zip(self.monsters,self.battle.monsters):
+            old.x,old.hp = new.x,new.hp
+
+    def configure_spells(self, equipped=None, priority=None):
+        if equipped is not None:
+            self.equipped = list(equipped)
+        if priority is not None:
+            self.priority = list(priority)
+        self.hero.update_loadout(spells=self.equipped,priority=self.priority)
 
     def select_dungeon(self, index: int):
         if not 0 <= index < len(DUNGEONS):
@@ -83,6 +123,7 @@ class GameState:
         self.room = 0
         self.hp = self.max_hp
         self.respawn_timer = 0
+        self.hero.alive = False
         self.spawn_room()
         self.message = "Nouveau donjon : " + self.dungeon["name"]
         return True
@@ -104,53 +145,47 @@ class GameState:
                 self.room = 0
                 self.spawn_room()
             return
-        if not self.monsters:
+        if self.room_exit > 0:
+            self.room_exit -= dt
+            self.hero.x += 160 * dt
+            self.player_x = self.hero.x
+            for name in self.hero.cooldowns:
+                self.hero.cooldowns[name] = max(0, self.hero.cooldowns[name]-dt)
+            if self.room_exit <= 0:
+                self._advance_room()
             return
-        living = [m for m in self.monsters if m.hp > 0]
-        if not living:
+        previous_kills = self.battle.monster_kills
+        self.battle.tick(dt)
+        self._sync_battle()
+        gained = self.battle.monster_kills - previous_kills
+        for _ in range(gained):
+            self.kills += 1
+            self.kamas += self.dungeon["kamas"]
+            self.grant_xp(self.dungeon["xp"])
+            if self.kills % 7 == 0:
+                self.chests += 1
+                self.message = "Coffre obtenu !"
+        if self.battle.finished and self.battle.winner == 2:
+            self.message = "Défaite : retour à la première salle"
+            self.respawn_timer = 1.0
             return
-        target = min(living, key=lambda m: abs(m.x - self.player_x))
-        if target.x - self.player_x > 54:
-            self.player_x += min(95 * dt, target.x - self.player_x - 54)
+        if self.battle.finished and self.battle.winner == 1:
+            self.room_exit = 0.8
+
+    def _advance_room(self):
+        if self.room < len(self.dungeon["rooms"]):
+            self.room += 1
+            self.spawn_room()
         else:
-            self.attack_timer += dt
-            if self.attack_timer >= 0.8:
-                self.attack_timer = 0
-                target.hp = max(0, target.hp - (10 + self.level * 2))
-                if target.hp == 0:
-                    self.kills += 1
-                    self.kamas += self.dungeon["kamas"]
-                    self.grant_xp(self.dungeon["xp"])
-                    if self.kills % 7 == 0:
-                        self.chests += 1
-                        self.message = "Coffre obtenu !"
-        for monster in living:
-            if monster.hp <= 0:
-                continue
-            if monster.x - self.player_x > 45:
-                monster.x -= min(48 * dt, monster.x - self.player_x - 45)
-            else:
-                monster.attack_timer += dt
-                if monster.attack_timer >= 1.4:
-                    monster.attack_timer = 0
-                    self.hp = max(0, self.hp - monster.damage)
-                    if self.hp == 0:
-                        self.message = "Défaite : retour à la première salle"
-                        self.respawn_timer = 1.0
-                        return
-        if all(m.hp <= 0 for m in self.monsters):
-            if self.room < len(self.dungeon["rooms"]):
-                self.room += 1
-                self.spawn_room()
-            else:
-                completed = self.dungeon_index
-                self.wins.add(completed)
-                self.message = "Donjon terminé : " + self.dungeon["name"]
-                if self.auto_progress and completed + 1 < len(DUNGEONS):
-                    self.dungeon_index += 1
-                self.room = 0
-                self.hp = self.max_hp
-                self.spawn_room()
+            completed = self.dungeon_index
+            self.wins.add(completed)
+            self.message = "Donjon terminé : " + self.dungeon["name"]
+            if self.auto_progress and completed + 1 < len(DUNGEONS):
+                self.dungeon_index += 1
+            self.room = 0
+            self.hp = self.max_hp
+            self.hero.alive = False
+            self.spawn_room()
 
     def to_dict(self):
         return {
@@ -158,6 +193,7 @@ class GameState:
             "kills": self.kills, "chests": self.chests,
             "wins": sorted(self.wins), "dungeon_index": self.dungeon_index,
             "auto_progress": self.auto_progress,
+            "equipped": self.equipped, "priority": self.priority,
         }
 
     def save(self):
@@ -180,6 +216,8 @@ class GameState:
             index = int(data.get("dungeon_index", 0))
             self.dungeon_index = index if 0 <= index < len(DUNGEONS) and (index == 0 or index - 1 in self.wins) else 0
             self.auto_progress = bool(data.get("auto_progress", True))
+            self.equipped = [s for s in data.get("equipped", DEFAULT_PRIORITY) if s in DEFAULT_PRIORITY]
+            self.priority = [s for s in data.get("priority", DEFAULT_PRIORITY) if s in DEFAULT_PRIORITY]
             self.hp = self.max_hp
             self.room = 0
             self.spawn_room()

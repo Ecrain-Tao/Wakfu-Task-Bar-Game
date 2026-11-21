@@ -1,0 +1,24 @@
+name: Combat V1 verification
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install certifi
+      - name: Compile Python sources
+        run: python -m compileall -q main.py wakfu_task_bar tests
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Headless combat smoke test
+        run: |
+          python -c "from wakfu_task_bar.engine import GameState; s=GameState(); [s.tick(.05) for _ in range(1200)]; print('room',s.room,'hp',s.hp,'kills',s.kills)"
