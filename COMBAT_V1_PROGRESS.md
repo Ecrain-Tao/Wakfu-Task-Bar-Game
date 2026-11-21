@@ -10,7 +10,7 @@ Branche de travail : `feature/combat-iop-v1`. Ne pas fusionner avant vérificati
 - Raccordement au moteur de donjons et à la sauvegarde ; transition visuelle sommaire ; poses procédurales provisoires.
 - Premiers tests unitaires.
 
-## À finaliser avant essais utilisateur
+## Limites restantes après cette première version de test
 - Contrôles de mouvement et d'actions avec durée, récupération d'interruption spécifique à chaque sort.
 - Rechargement d'Uppercut après *quatre attaques lancées* et conditions alternatives générales (coups, dégâts reçus/infligés, morts).
 - Simulation des projectiles pour les attaques à distance.
@@ -26,4 +26,4 @@ python -m unittest discover -s tests
 python main.py
 ```
 
-**Important :** cette branche reste un prototype de développement. Les tests n'ont pas encore été exécutés dans un environnement Python avec les fichiers complets du dépôt.
+**Important :** première version de test expérimentale. La compilation macOS/Windows et les tests sont configurés dans GitHub Actions, mais leur succès doit être confirmé dans les runs. Voir `TEST_COMBAT_V1.md`.
