@@ -55,6 +55,24 @@ class Game(tk.Tk):
         for i, dungeon in enumerate(DUNGEONS):
             tk.Button(self.dungeon_panel, text=dungeon["name"],
                       command=lambda index=i: self.choose_dungeon(index)).pack(anchor="w", pady=2)
+        self.spell_panel = tk.Frame(self.menu_inner, bg=PANEL)
+        self.spell_vars = {}
+        self.spell_priority = list(self.state.priority)
+        self.spell_list = tk.Listbox(self.spell_panel, height=4, exportselection=False)
+        for spell in self.spell_priority:
+            self.spell_list.insert("end", spell)
+        self.spell_list.pack(fill="x", pady=3)
+        controls = tk.Frame(self.spell_panel, bg=PANEL)
+        controls.pack(fill="x")
+        tk.Button(controls, text="Monter", command=lambda: self.move_spell(-1)).pack(side="left")
+        tk.Button(controls, text="Descendre", command=lambda: self.move_spell(1)).pack(side="left")
+        for spell in self.spell_priority:
+            var = tk.BooleanVar(value=spell in self.state.equipped)
+            self.spell_vars[spell] = var
+            tk.Checkbutton(self.spell_panel, text=spell.replace("_", " ").title(),
+                           variable=var, command=self.apply_spells,
+                           bg=PANEL, fg=FG, selectcolor=BG,
+                           activebackground=PANEL, activeforeground=FG).pack(anchor="w")
         self.update_panel = tk.Frame(self.menu_inner, bg=PANEL)
         self.update_status = tk.Label(self.update_panel, text=f"Version installée : {VERSION}",
                                       bg=PANEL, fg=FG, justify="left", anchor="w", wraplength=600)
@@ -102,6 +120,10 @@ class Game(tk.Tk):
             self.update_panel.pack(fill="x", pady=4)
         else:
             self.update_panel.pack_forget()
+        if name == "Sorts":
+            self.spell_panel.pack(fill="x", pady=4)
+        else:
+            self.spell_panel.pack_forget()
         if name == "Donjons":
             self.dungeon_panel.pack(fill="x", pady=4)
         else:
@@ -121,11 +143,32 @@ class Game(tk.Tk):
             ),
             "Inventaire": f"Coffres collectés : {state.chests}\\nÉquipement, sac, fusion et vente : à venir.",
             "Aptitudes": f"Niveau {state.level}\\nPoints d'aptitudes : à venir.",
-            "Sorts": "Attaque de base automatique. Sorts et priorités : à venir.",
+            "Sorts": f"Iop — budget {state.pa} PA / {state.pw} PW. Les sorts sont automatiques, par ordre de priorité.",
             "Donjons": f"Donjon actuel : {d['name']}\\nDonjons validés : {len(state.wins)}/{len(DUNGEONS)}",
             "Réglages": "Vérifier et télécharger les mises à jour publiques.",
         }
         self.info.configure(text=content[self.active_tab].replace("\\n", "\n"))
+
+    def apply_spells(self):
+        equipped = [s for s in self.spell_priority if self.spell_vars[s].get()]
+        self.state.configure_spells(equipped=equipped, priority=self.spell_priority)
+        self.state.save()
+        self.refresh_menu()
+
+    def move_spell(self, direction):
+        selection = self.spell_list.curselection()
+        if not selection:
+            return
+        i = selection[0]
+        j = i + direction
+        if j < 0 or j >= len(self.spell_priority):
+            return
+        self.spell_priority[i], self.spell_priority[j] = self.spell_priority[j], self.spell_priority[i]
+        self.spell_list.delete(0, "end")
+        for spell in self.spell_priority:
+            self.spell_list.insert("end", spell)
+        self.spell_list.selection_set(j)
+        self.apply_spells()
 
     def toggle_auto(self):
         self.state.auto_progress = self.auto_var.get()
@@ -226,7 +269,7 @@ class Game(tk.Tk):
         all_x = [state.player_x] + [m.x for m in state.monsters]
         extent = max(440, max(all_x, default=440) + 30)
         scale = min(1.0, max(0.25, (w - 35) / extent))
-        entities = [(state.player_x, state.hp, state.max_hp, "#5ea5db", "Héros")]
+        entities = [(state.player_x, state.hp, state.max_hp, "#5ea5db", "Iop")]
         entities += [(m.x, m.hp, m.max_hp, "#d37b72", m.name) for m in state.monsters if m.hp > 0]
         for x, hp, max_hp, color, name in entities:
             x *= scale
