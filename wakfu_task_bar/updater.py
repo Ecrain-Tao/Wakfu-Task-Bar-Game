@@ -19,7 +19,7 @@ USER_AGENT = "Wakfu-Task-Bar-Game/" + VERSION
 def version_parts(version: str) -> tuple[int, int, int, int]:
     """Comparable release tuple: prerelease sorts before the same stable version."""
     clean = version.strip().removeprefix("v")
-    match = re.fullmatch(r"(\\d+)\\.(\\d+)\\.(\\d+)(?:-(alpha|beta|rc)(?:\\.(\\d+))?)?", clean)
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)(?:\.(\d+))?)?", clean)
     if not match:
         raise ValueError("Numéro de version invalide")
     major, minor, patch, stage, number = match.groups()
