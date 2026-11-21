@@ -122,6 +122,7 @@ class GameState:
         self.room = 0
         self.hp = self.max_hp
         self.respawn_timer = 0
+        self.hero.alive = False
         self.spawn_room()
         self.message = "Nouveau donjon : " + self.dungeon["name"]
         return True
