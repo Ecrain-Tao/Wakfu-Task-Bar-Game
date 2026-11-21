@@ -25,3 +25,6 @@ Une fois l'alpha lancée : **Réglages → Versions expérimentales → Vérifie
 
 ## Limites
 La publication n'est pas automatique : elle nécessite un lancement manuel du workflow et le secret GitHub. Les tests CI ne garantissent pas l'absence de bugs d'interface ou de gameplay. Ne pas fusionner la PR de développement pour publier cette alpha.
+
+## Choisir librement le numéro de la prochaine version
+Dans **Run workflow**, saisir une version inédite, par exemple `v0.3.1-alpha`, `v0.3.2-alpha.1`, `v0.3.2-beta` ou `v0.4.0`. GitHub Actions inscrit cette version dans chaque exécutable, puis vérifie les deux archives ZIP avant publication. Plus besoin de modifier `VERSION` dans le code. Le format autorisé reste `vMAJEURE.MINEURE.CORRECTIF` avec éventuellement `-alpha`, `-beta`, `-rc` et un numéro après un point.

@@ -1,11 +1,12 @@
 import unittest
 from unittest.mock import patch, MagicMock
 import json
+import os
 from wakfu_task_bar.updater import VERSION, version_parts, check_latest
 
 class UpdateChannelTests(unittest.TestCase):
     def test_prerelease_order(self):
-        self.assertEqual(VERSION, "0.3.0-alpha")
+        self.assertEqual(VERSION, os.getenv("WAKFU_RELEASE_VERSION", "0.3.0-alpha").removeprefix("v"))
         self.assertLess(version_parts("v0.3.0-alpha"), version_parts("v0.3.0"))
         self.assertLess(version_parts("v0.3.0-alpha"), version_parts("v0.3.0-beta"))
         self.assertGreater(version_parts("v0.3.0-alpha"), version_parts("v0.2.2"))
@@ -26,7 +27,7 @@ class UpdateChannelTests(unittest.TestCase):
         urlopen.return_value.__enter__.return_value = response
         found = check_latest("experimental")
         self.assertEqual(found["tag"],"v0.3.0-alpha")
-        self.assertFalse(found["newer"])
+        self.assertEqual(found["newer"], version_parts(found["tag"]) > version_parts(VERSION))
         self.assertIsNotNone(found["asset"])
 
     def test_invalid_channel(self):

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version, e.g. v0.3.0-alpha (must match app VERSION)'
+        description: 'Choose release version, e.g. v0.3.1-alpha or v0.4.0'
         required: true
 
 permissions:
@@ -15,6 +15,8 @@ permissions:
 
 jobs:
   package:
+    env:
+      WAKFU_RELEASE_VERSION: ${{ github.event.inputs.version || github.ref_name }}
     strategy:
       fail-fast: false
       matrix:
@@ -29,6 +31,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Embed selected version in the compiled app
+        shell: python
+        run: |
+          import os
+          import re
+          from pathlib import Path
+          requested = os.environ["WAKFU_RELEASE_VERSION"].strip()
+          if not re.fullmatch(r"v?\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)(?:\.\d+)?)?", requested):
+              raise SystemExit("Unsupported release version: " + requested)
+          chosen = requested.removeprefix("v")
+          Path("wakfu_task_bar/_build_version.py").write_text(
+              "VERSION = " + repr(chosen) + "\n", encoding="utf-8"
+          )
+          print("Building Wakfu Task Bar Game v" + chosen)
       - name: Install packaging tools
         run: python -m pip install --upgrade pip pyinstaller certifi
       - name: Run tests
@@ -38,12 +54,17 @@ jobs:
       - name: Archive application
         shell: python
         run: |
+          import os
           from pathlib import Path
           from zipfile import ZipFile, ZIP_DEFLATED
           with ZipFile("${{ matrix.archive }}", "w", ZIP_DEFLATED) as archive:
               for item in Path("dist").rglob("*"):
                   if item.is_file():
                       archive.write(item, item.relative_to("dist"))
+              archive.writestr(
+                  "VERSION.txt",
+                  os.environ["WAKFU_RELEASE_VERSION"].strip().removeprefix("v") + "\n",
+              )
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.os }}
@@ -79,12 +100,22 @@ jobs:
             echo "::error::Invalid release version: ${VERSION}"
             exit 1
           fi
-          python -m pip install certifi
-          APP_VERSION="$(python -c 'from wakfu_task_bar.updater import VERSION; print(VERSION)')"
-          if [[ "${VERSION}" != "v${APP_VERSION}" ]]; then
-            echo "::error::Version mismatch: release ${VERSION}, app v${APP_VERSION}"
-            exit 1
-          fi
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from zipfile import ZipFile
+          expected = os.environ["VERSION"].strip().removeprefix("v")
+          archives = sorted(Path("release-files").glob("*.zip"))
+          names = {"Wakfu-Task-Bar-Game-macOS-Intel.zip", "Wakfu-Task-Bar-Game-Windows.zip"}
+          if {archive.name for archive in archives} != names:
+              raise SystemExit("Both macOS and Windows archives are required")
+          for archive in archives:
+              with ZipFile(archive) as package:
+                  actual = package.read("VERSION.txt").decode("utf-8").strip()
+              if actual != expected:
+                  raise SystemExit(f"Archive {archive.name} contains v{actual}, expected v{expected}")
+          print(f"Verified {len(archives)} archives for v{expected}")
+          PY
           FLAGS=(--latest)
           NOTES="Nouvelle version du jeu pour macOS Intel et Windows."
           if [[ "${VERSION}" == *-* ]]; then

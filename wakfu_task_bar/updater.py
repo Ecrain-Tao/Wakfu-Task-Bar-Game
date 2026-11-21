@@ -10,7 +10,14 @@ import urllib.request
 import certifi
 from pathlib import Path
 
-VERSION = "0.3.0-alpha"
+# Releases embed the user-selected version before PyInstaller packages the app.
+# Source checkouts retain this fallback for local development.
+try:
+    from ._build_version import VERSION
+except ModuleNotFoundError as exc:
+    if exc.name != __package__ + "._build_version":
+        raise
+    VERSION = "0.3.0-alpha"
 RELEASES_ROOT = "https://api.github.com/repos/Ecrain-Tao/Wakfu-Task-Bar-Game-Releases/releases"
 RELEASES_API = RELEASES_ROOT + "/latest"
 USER_AGENT = "Wakfu-Task-Bar-Game/" + VERSION
