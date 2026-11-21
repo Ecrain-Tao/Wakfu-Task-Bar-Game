@@ -30,6 +30,9 @@ class Game(tk.Tk):
         self.latest_release = None
         self.update_busy = False
         self.combat_log = []
+        self.floating_hits = []
+        self.combat_clock = 0.0
+        self.previous_room = None
 
         self.top = tk.Frame(self, bg=PANEL, highlightbackground="#47606c", highlightthickness=1)
         self.top.place(relx=0, rely=0, relwidth=1, relheight=0.4, height=-16)
@@ -274,77 +277,145 @@ class Game(tk.Tk):
         self.after(150, self.process_update_events)
 
     def draw(self):
+        from wakfu_task_bar.combat_v1 import COLORS, RECHARGE, COST, DURATION
         c = self.battle
         c.delete("all")
         w = max(1, c.winfo_width())
         h = max(1, c.winfo_height())
-        ground = h - 30
+        ground = h - 26
+        state = self.state
+        hero = state.hero
+        enemies = [m for m in state.battle.monsters if m.alive or m.fade > 0]
+        all_x = [hero.x] + [m.x for m in enemies]
+        extent = max(440, max(all_x, default=440) + 45)
+        scale = min(1.0, max(.25, (w - 32) / extent))
         c.create_rectangle(0, ground, w, h, fill="#29483b", outline="")
         c.create_line(0, ground, w, ground, fill="#54765d", width=2)
-        state = self.state
-        all_x = [state.player_x] + [m.x for m in state.monsters]
-        extent = max(440, max(all_x, default=440) + 30)
-        scale = min(1.0, max(0.25, (w - 35) / extent))
-        hero = state.hero
-        entities = [(hero, "#5ea5db")]
-        entities += [(m, "#d37b72") for m in state.battle.monsters if m.alive or m.fade > 0]
-        for fighter, color in entities:
+
+        def draw_fighter(fighter, color, y_offset=0, front=False):
             x = fighter.x * scale
+            base = ground + y_offset
             if fighter.hp <= 0 and fighter.fade <= 0:
-                continue
-            attacking = bool(fighter.action)
+                return
             action = fighter.action
-            duration = fighter.attack_animation if action == "monster_basic" else {
-                "jabs": .8, "uppercut": .6, "charge": .6,
-                "super_iop_punch": 1.0, "wrath": 1.5,
-            }.get(action, 1.0)
-            phase = fighter.action_elapsed / duration if attacking else 0
-            # Simple procedural pose placeholders until final character assets.
+            duration = fighter.attack_animation if action == "monster_basic" else DURATION.get(action, 1)
+            phase = fighter.action_elapsed / duration if action else 0
             lift = 13 if action == "super_iop_punch" and .2 <= phase <= .8 else 0
-            stretch = 8 if action in ("jabs","uppercut","super_iop_punch") and phase > .35 else 0
-            body = color if fighter.alive else "#777777"
-            c.create_oval(x - 14, ground - 47 - lift, x + 14 + stretch,
-                          ground - 8 - lift, fill=body, outline="#d4e5e3", width=2)
-            if action == "wrath":
-                radius = 100 * scale
-                c.create_oval(x-radius, ground-30-radius, x+radius, ground-30+radius,
-                              outline="#f46d4e", width=3)
+            stretch = 8 if action in ("jabs", "uppercut", "super_iop_punch") and phase > .35 else 0
+            if front:
+                c.create_oval(x-19,base-9,x+19,base+1,fill="#315c75",outline="#8ad5ff",width=2)
+            c.create_oval(x-14,base-47-lift,x+14+stretch,base-8-lift,
+                          fill=color if fighter.alive else "#777777",
+                          outline="#ffffff" if front else "#d4e5e3",width=3 if front else 2)
             if action == "charge":
-                c.create_line(x-25,ground-25,x-5,ground-25,fill="#75c9f4",width=3)
+                c.create_line(x-27,base-24,x-7,base-24,fill="#75c9f4",width=3)
             if fighter.alive:
-                c.create_rectangle(x-21,ground-58-lift,x+21,ground-53-lift,
-                                   fill="#4c252c",outline="")
-                c.create_rectangle(x-21,ground-58-lift,
+                c.create_rectangle(x-21,base-58-lift,x+21,base-53-lift,fill="#4c252c",outline="")
+                c.create_rectangle(x-21,base-58-lift,
                                    x-21+42*fighter.hp/max(1,fighter.max_hp),
-                                   ground-53-lift,fill="#67c68a",outline="")
-            c.create_text(x,ground-72-lift,text=fighter.name,fill=FG,font=("Arial",9))
-        if hero.action:
-            c.create_text(12,12,anchor="nw",text=f"Iop : {hero.action.replace('_',' ')}",
-                          fill="#f9df99",font=("Arial",10,"bold"))
-        from wakfu_task_bar.combat_v1 import COLORS
-        for i, (line, element) in enumerate(self.combat_log[-4:]):
-            c.create_text(w-10, 12+i*17, anchor="ne", text=line,
-                          fill=COLORS.get(element, FG), font=("Arial",9,"bold"))
+                                   base-53-lift,fill="#67c68a",outline="")
+            c.create_text(x,base-70-lift,text=fighter.name,fill="#8ddaff" if front else FG,
+                          font=("Arial",9,"bold" if front else "normal"))
+            return x,base
+
+        # Spread enemy portraits vertically only for readability; simulation positions stay unchanged.
+        for i, monster in enumerate(enemies):
+            draw_fighter(monster,"#d37b72", -min(i,3)*18)
+        if hero.action == "wrath":
+            radius = 100 * scale
+            x = hero.x * scale
+            c.create_oval(x-radius,ground-30-radius,x+radius,ground-30+radius,
+                          outline="#f46d4e",width=3)
+        # Hero is always drawn last, and a little lower than enemies when overlapping.
+        hero_offset = 5 if any(abs(m.x-hero.x)*scale < 45 for m in enemies) else 0
+        draw_fighter(hero,"#5ea5db",hero_offset,True)
+
+        for hit in self.floating_hits:
+            fighter = hit["fighter"]
+            x = fighter.x*scale
+            offset = hero_offset if fighter is hero else -min(
+                next((i for i,m in enumerate(enemies) if m is fighter),0),3)*18
+            y = ground+offset-94-(self.combat_clock-hit["time"])*22
+            c.create_text(x,y,text=hit["text"],fill=hit["color"],
+                          font=("Arial",12,"bold"))
+
+        # Compact cooldown display in the upper-left; never covers character names.
+        spell_names = {"jabs":"Jabs","uppercut":"Uppercut","charge":"Charge",
+                       "super_iop_punch":"Super Iop Punch","wrath":"Colère du Iop"}
+        equipped = [s for s in hero.priority if s in hero.equipped]
+        lines = [("ATTAQUES / RECHARGES", "#f9df99")]
+        if hero.action == "jabs":
+            lines.append(("Jabs — en cours", "#9bd7ff"))
+        else:
+            wait = max(0,(1-hero.basic_progress)*hero.basic_wait_seconds()) if hero.basic_started else 0
+            lines.append((f"Jabs — {wait:.1f}s" if wait > 0 else "Jabs — prêt","#c9e1e9"))
+        active = set(hero.active_spells())
+        for spell in equipped:
+            if spell not in active:
+                status = "hors budget PA/PW"
+            elif hero.action == spell:
+                status = "en cours"
+            elif spell == "uppercut":
+                status = f"{min(4,hero.uppercut_count)}/4 attaques"
+            elif hero.cooldowns.get(spell,0) > 0:
+                status = f"{hero.cooldowns[spell]:.1f}s"
+            else:
+                status = "prêt"
+            lines.append((f"{spell_names.get(spell,spell)} — {status}",
+                          "#8be3aa" if status=="prêt" else "#c9e1e9"))
+        panel_w = min(240,max(155,w*.3))
+        panel_h = 12+len(lines)*17
+        c.create_rectangle(7,7,panel_w,7+panel_h,fill="#20313d",outline="#395363")
+        for i,(label,color) in enumerate(lines):
+            c.create_text(15,19+i*17,anchor="w",text=label,fill=color,font=("Arial",9))
+
+        # The log shows direction and spell, not repeated opaque damage numbers.
+        if w >= 480:
+            panel_x = max(panel_w+15,w-275)
+            c.create_rectangle(panel_x,7,w-7,105,fill="#20313d",outline="#395363")
+            c.create_text(panel_x+8,18,anchor="w",text="DERNIERS ÉVÉNEMENTS",
+                          fill="#f9df99",font=("Arial",9,"bold"))
+            for i,entry in enumerate(self.combat_log[-4:]):
+                c.create_text(panel_x+8,37+i*17,anchor="w",text=entry["text"][:45],
+                              fill=entry["color"],font=("Arial",9))
         if state.room_exit > 0:
             c.create_text(w/2,20,text="Salle terminée !",fill="#8ae7a8",
                           font=("Arial",14,"bold"))
 
     def tick(self):
+        from wakfu_task_bar.combat_v1 import COLORS
+        self.combat_clock += TICK_MS / 1000
+        before_battle = self.state.battle
         self.state.tick(TICK_MS / 1000)
-        for event in self.state.battle.events:
+        # Room transitions may replace the battle; events from the previous room
+        # must still be processed before the new room starts.
+        for event in before_battle.events:
             if event.kind == "hit":
-                self.combat_log.append((f"{event.source} → {event.target} : -{event.amount}",event.element))
+                source_is_player = any(f.name == event.source for f in before_battle.players)
+                target_side = before_battle.monsters if source_is_player else before_battle.players
+                target = next((f for f in target_side if f.name == event.target),None)
+                color = COLORS.get(event.element,FG)
+                direction = "Infligés" if source_is_player else "Reçus"
+                label = f"{direction} : {event.amount} ({event.element})"
+                self.combat_log.append({"text":label,"color":color})
+                if target is not None:
+                    self.floating_hits.append({"fighter":target,"text":f"-{event.amount}",
+                                               "color":color,"time":self.combat_clock})
             elif event.kind == "death":
-                self.combat_log.append((f"{event.source} K.O.", ""))
+                self.combat_log.append({"text":f"{event.source} : K.O.","color":"#f4c1bc"})
         self.combat_log = self.combat_log[-4:]
+        self.floating_hits = [hit for hit in self.floating_hits
+                              if self.combat_clock-hit["time"] < 1.4
+                              and (hit["fighter"] is self.state.hero
+                                   or hit["fighter"] in self.state.battle.monsters)]
         self.last_saved += TICK_MS
         if self.last_saved >= 10000:
             self.last_saved = 0
             self.state.save()
-        if self.active_tab in ("Combat", "Donjons", "Inventaire"):
+        if self.active_tab in ("Combat","Donjons","Inventaire"):
             self.refresh_menu()
         self.draw()
-        self.after(TICK_MS, self.tick)
+        self.after(TICK_MS,self.tick)
 
 
 def main():
