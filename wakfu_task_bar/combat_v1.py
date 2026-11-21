@@ -381,10 +381,14 @@ class Battle:
             moments = (.7,.9)
         else:
             moments = (duration,)
-        for index,moment in enumerate(moments):
-            if old < moment <= new+1e-8 and actor.alive and actor.action:
-                actor.impact_index = index
-                self.impact(actor,moment)
+        # A consumed-impact cursor prevents repeated hits at floating-point boundaries.
+        while actor.impact_index < len(moments):
+            index = actor.impact_index
+            moment = moments[index]
+            if moment > new + 1e-8 or not actor.alive or not actor.action:
+                break
+            actor.impact_index += 1
+            self.impact(actor,moment)
         actor.action_elapsed = new
         if new >= duration-1e-8 and actor.alive and actor.action:
             self.finish(actor)
