@@ -20,7 +20,7 @@ def half_up(value):
     return max(0, int(Decimal(str(max(0, value))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)))
 
 def resist_percent(raw):
-    return floor((1 - 0.8 ** (raw / 100)) * 100)
+    return floor((1 - 0.8 ** (raw / 100)) * 100 + 1e-9)
 
 @dataclass
 class Stats:
