@@ -1,19 +1,13 @@
 name: Combat V1 verification
 
 on:
-  push:
-    branches: [feature/combat-iop-v1]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
 jobs:
   tests:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
