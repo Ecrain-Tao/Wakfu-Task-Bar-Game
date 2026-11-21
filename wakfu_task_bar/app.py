@@ -39,6 +39,8 @@ class Game(tk.Tk):
         self.combat_clock = 0.0
         self.previous_room = None
         self.sprites = self.load_sprites()
+        self.chacha_animations = self.load_chacha_animations()
+        self._monster_positions = {}
 
         self.top = tk.Frame(self, bg=PANEL, highlightbackground="#47606c", highlightthickness=1)
         self.top.place(relx=0, rely=0, relwidth=1, relheight=0.4, height=-16)
@@ -250,6 +252,27 @@ class Game(tk.Tk):
         return sprites
 
 
+    @staticmethod
+    def load_chacha_animations():
+        """Optional animation frames at assets/chachas/<variant>/<action>/00.png."""
+        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+        root = base / "assets" / "chachas"
+        animations = {}
+        for variant in ("noir", "gribouille", "roux", "azur"):
+            for action in ("idle", "walk", "claw"):
+                frames = []
+                for path in sorted((root / variant / action).glob("*.png")):
+                    try:
+                        with Image.open(path) as source:
+                            frame = source.convert("RGBA")
+                        frame.thumbnail((62, 74), Image.Resampling.LANCZOS)
+                        frames.append(frame)
+                    except (OSError, ValueError) as exc:
+                        print(f"Invalid animation frame {path}: {exc}", file=sys.stderr)
+                if frames:
+                    animations[(variant, action)] = frames
+        return animations
+
     def download_update(self):
         if self.update_busy or not self.latest_release:
             return
@@ -339,6 +362,7 @@ class Game(tk.Tk):
         from wakfu_task_bar.combat_v1 import COLORS, RECHARGE, COST, DURATION
         c = self.battle
         c.delete("all")
+        self._draw_photos = []
         w = max(1, c.winfo_width())
         h = max(1, c.winfo_height())
         ground = h - 26
@@ -374,7 +398,33 @@ class Game(tk.Tk):
                 c.create_oval(x-19,base-9,x+19,base+1,fill="#315c75",outline="#8ad5ff",width=2)
             sprite = self.sprites.get("iop_idle" if front else "chacha_idle")
             opacity = max(0, min(1, fighter.fade)) if not fighter.alive else 1
-            if sprite:
+            # Prefer right-facing animation frames when the pack is installed.
+            animated = None
+            if not front and self.chacha_animations:
+                variant = ("noir", "gribouille", "roux", "azur")[
+                    state.battle.monsters.index(fighter) % 4
+                ]
+                prev_x = self._monster_positions.get(id(fighter), fighter.x)
+                moving = abs(prev_x - fighter.x) > 0.03
+                anim = "claw" if action == "monster_basic" else ("walk" if moving else "idle")
+                frames = self.chacha_animations.get((variant, anim))
+                if frames:
+                    if anim == "claw":
+                        index = min(len(frames)-1, int(phase*len(frames)))
+                    else:
+                        fps = 10 if anim == "walk" else 4
+                        index = int(self.combat_clock*fps) % len(frames)
+                    raw = frames[index]
+                    alpha = raw.getchannel("A").point(lambda a: int(a*opacity))
+                    faded = raw.copy()
+                    faded.putalpha(alpha)
+                    animated = ImageTk.PhotoImage(faded)
+                    if not hasattr(self, "_draw_photos"):
+                        self._draw_photos = []
+                    self._draw_photos.append(animated)
+            if animated:
+                c.create_image(x, base-28-lift, image=animated)
+            elif sprite:
                 frame = min(3, int((1-opacity)*4))
                 c.create_image(x, base-28-lift, image=sprite[frame])
             elif fighter.alive:
@@ -404,6 +454,7 @@ class Game(tk.Tk):
         depth_by_id = {id(monster): i % 4 for i, monster in enumerate(ordered_enemies)}
         for monster in sorted(ordered_enemies, key=lambda m: depth_by_id[id(m)], reverse=True):
             draw_fighter(monster, "#d37b72", -depth_by_id[id(monster)]*28)
+        self._monster_positions = {id(m): m.x for m in enemies}
         if hero.action == "wrath":
             radius = 100 * scale
             x = hero.x * scale
