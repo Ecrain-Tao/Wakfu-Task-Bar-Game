@@ -5,7 +5,9 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import threading
 import queue
+import sys
 from pathlib import Path
+from wakfu_task_bar.installer import installed_macos_app, stage_macos_update
 from wakfu_task_bar.updater import VERSION, check_latest, download_asset
 from wakfu_task_bar.engine import GameState, DUNGEONS, xp_needed, MAX_LEVEL
 
@@ -33,6 +35,7 @@ class Game(tk.Tk):
         self.floating_hits = []
         self.combat_clock = 0.0
         self.previous_room = None
+        self.sprites = self.load_sprites()
 
         self.top = tk.Frame(self, bg=PANEL, highlightbackground="#47606c", highlightthickness=1)
         self.top.place(relx=0, rely=0, relwidth=1, relheight=0.4, height=-16)
@@ -91,13 +94,13 @@ class Game(tk.Tk):
         self.update_status.pack(fill="x", pady=5)
         self.check_button = tk.Button(self.update_panel, text="Vérifier les mises à jour", command=self.check_updates)
         self.check_button.pack(anchor="w", pady=4)
-        self.download_button = tk.Button(self.update_panel, text="Télécharger la mise à jour",
+        self.download_button = tk.Button(self.update_panel, text="Installer la mise à jour",
                                          command=self.download_update, state="disabled")
         self.download_button.pack(anchor="w", pady=4)
         self.progress = ttk.Progressbar(self.update_panel, maximum=100)
         self.progress.pack(fill="x", pady=4)
         self.update_note = tk.Label(self.update_panel,
-                                    text="Installation manuelle pour cette première version du système.",
+                                    text="Sur macOS, mise à jour dans l’application actuelle après confirmation.",
                                     bg=PANEL, fg="#b4c4c8", anchor="w", justify="left", wraplength=600)
         self.update_note.pack(fill="x", pady=4)
 
@@ -216,15 +219,43 @@ class Game(tk.Tk):
                 self.update_events.put(("error", str(exc)))
         threading.Thread(target=worker, daemon=True).start()
 
+    @staticmethod
+    def load_sprites():
+        """Load optional idle PNGs; preserve placeholders until they are added."""
+        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+        sprites = {}
+        for key in ("iop_idle", "chacha_idle"):
+            path = base / "assets" / "sprites" / (key + ".png")
+            try:
+                image = tk.PhotoImage(file=str(path))
+                factor = max(1, (image.width() + 51) // 52, (image.height() + 71) // 72)
+                sprites[key] = image.subsample(factor) if factor > 1 else image
+            except (tk.TclError, OSError):
+                pass
+        return sprites
+
     def download_update(self):
         if self.update_busy or not self.latest_release:
             return
         asset = self.latest_release.get("asset")
         if not asset:
             return
-        folder = filedialog.askdirectory(title="Choisir le dossier de téléchargement")
-        if not folder:
-            return
+        app_path = installed_macos_app()
+        if app_path:
+            if not messagebox.askyesno(
+                "Mettre à jour l'application",
+                "Remplacer l'application actuelle et la relancer ? "
+                "Une sauvegarde de l'ancienne version sera conservée."
+            ):
+                return
+            folder = Path.home() / ".wakfu-task-bar-game" / "updates"
+        else:
+            folder_name = filedialog.askdirectory(
+                title="Installation automatique indisponible : choisir le dossier de téléchargement"
+            )
+            if not folder_name:
+                return
+            folder = Path(folder_name)
         self.update_busy = True
         self.download_button.configure(state="disabled")
         self.check_button.configure(state="disabled")
@@ -233,10 +264,10 @@ class Game(tk.Tk):
         def worker():
             try:
                 path = download_asset(
-                    asset, Path(folder),
+                    asset, folder,
                     lambda done, total: self.update_events.put(("progress", (done, total)))
                 )
-                self.update_events.put(("downloaded", str(path)))
+                self.update_events.put(("install_ready" if app_path else "downloaded", str(path)))
             except Exception as exc:
                 self.update_events.put(("error", str(exc)))
         threading.Thread(target=worker, daemon=True).start()
@@ -261,6 +292,18 @@ class Game(tk.Tk):
                         self.update_status.configure(text=f"Version {value['tag']} sans fichier pour ce système.")
                     else:
                         self.update_status.configure(text=f"Vous avez la dernière version ({VERSION}).")
+                elif kind == "install_ready":
+                    self.update_busy = False
+                    try:
+                        stage_macos_update(Path(value))
+                        self.state.save()
+                        self.update_status.configure(text="Mise à jour préparée. Redémarrage…")
+                        self.after(200, self.destroy)
+                        return
+                    except (OSError, RuntimeError, ValueError) as exc:
+                        self.check_button.configure(state="normal")
+                        self.download_button.configure(state="normal")
+                        self.update_status.configure(text=f"Installation impossible : {exc}")
                 elif kind == "downloaded":
                     self.update_busy = False
                     self.check_button.configure(state="normal")
@@ -304,9 +347,13 @@ class Game(tk.Tk):
             stretch = 8 if action in ("jabs", "uppercut", "super_iop_punch") and phase > .35 else 0
             if front:
                 c.create_oval(x-19,base-9,x+19,base+1,fill="#315c75",outline="#8ad5ff",width=2)
-            c.create_oval(x-14,base-47-lift,x+14+stretch,base-8-lift,
-                          fill=color if fighter.alive else "#777777",
-                          outline="#ffffff" if front else "#d4e5e3",width=3 if front else 2)
+            sprite = self.sprites.get("iop_idle" if front else "chacha_idle")
+            if sprite and fighter.alive:
+                c.create_image(x, base-28-lift, image=sprite)
+            else:
+                c.create_oval(x-14,base-47-lift,x+14+stretch,base-8-lift,
+                              fill=color if fighter.alive else "#777777",
+                              outline="#ffffff" if front else "#d4e5e3",width=3 if front else 2)
             if action == "charge":
                 c.create_line(x-27,base-24,x-7,base-24,fill="#75c9f4",width=3)
             if fighter.alive:
