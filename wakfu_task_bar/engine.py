@@ -76,7 +76,7 @@ class GameState:
         boss = self.room >= len(self.dungeon["rooms"])
         count = 1 if boss else self.dungeon["rooms"][self.room]
         hp = self.dungeon["hp"] * (3 if boss else 1)
-        self.hero = Fighter("Iop", 60.0, self.hp, self.max_hp, side=1, speed=95)
+        self.hero = Fighter("Iop", 60.0, self.hp, self.max_hp, side=1, speed=95, radius=14)
         self.hero.priority = list(self.priority)
         self.hero.equipped = list(self.equipped)
         self.hero.pa, self.hero.pw = self.pa, self.pw
@@ -94,7 +94,7 @@ class GameState:
             enemies.append(Fighter(monster.name,monster.x,monster.hp,monster.max_hp,
                                    damage=monster.damage,side=2,speed=48,reach=45,
                                    attack_animation=.5,attack_wait=1.4,
-                                   radius=20 if boss else 0))
+                                   radius=20 if boss else 14))
         self.battle = Battle([self.hero], enemies)
         self.room_exit = 0.0
         self._sync_battle()
