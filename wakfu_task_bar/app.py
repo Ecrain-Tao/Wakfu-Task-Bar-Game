@@ -29,6 +29,7 @@ class Game(tk.Tk):
         self.update_events = queue.Queue()
         self.latest_release = None
         self.update_busy = False
+        self.combat_log = []
 
         self.top = tk.Frame(self, bg=PANEL, highlightbackground="#47606c", highlightthickness=1)
         self.top.place(relx=0, rely=0, relwidth=1, relheight=0.4, height=-16)
@@ -305,12 +306,22 @@ class Game(tk.Tk):
         if hero.action:
             c.create_text(12,12,anchor="nw",text=f"Iop : {hero.action.replace('_',' ')}",
                           fill="#f9df99",font=("Arial",10,"bold"))
+        from wakfu_task_bar.combat_v1 import COLORS
+        for i, (line, element) in enumerate(self.combat_log[-4:]):
+            c.create_text(w-10, 12+i*17, anchor="ne", text=line,
+                          fill=COLORS.get(element, FG), font=("Arial",9,"bold"))
         if state.room_exit > 0:
             c.create_text(w/2,20,text="Salle terminée !",fill="#8ae7a8",
                           font=("Arial",14,"bold"))
 
     def tick(self):
         self.state.tick(TICK_MS / 1000)
+        for event in self.state.battle.events:
+            if event.kind == "hit":
+                self.combat_log.append((f"{event.source} → {event.target} : -{event.amount}",event.element))
+            elif event.kind == "death":
+                self.combat_log.append((f"{event.source} K.O.", ""))
+        self.combat_log = self.combat_log[-4:]
         self.last_saved += TICK_MS
         if self.last_saved >= 10000:
             self.last_saved = 0
