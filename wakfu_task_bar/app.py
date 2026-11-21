@@ -17,7 +17,7 @@ BG = "#15232e"
 PANEL = "#223542"
 FG = "#e8e4d6"
 SPELL_NAMES = {"jabs": "Jabs", "uppercut": "Uppercut", "charge": "Charge",
-               "super_iop_punch": "Super Iop Punch", "wrath": "Colère du Iop"}
+               "super_iop_punch": "SUPER IOP PUNCH", "wrath": "Colère du Iop"}
 
 
 class Game(tk.Tk):
