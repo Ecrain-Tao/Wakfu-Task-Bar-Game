@@ -75,6 +75,14 @@ class Game(tk.Tk):
                            bg=PANEL, fg=FG, selectcolor=BG,
                            activebackground=PANEL, activeforeground=FG).pack(anchor="w")
         self.update_panel = tk.Frame(self.menu_inner, bg=PANEL)
+        self.update_channel = tk.StringVar(value="stable")
+        channel_frame = tk.Frame(self.update_panel, bg=PANEL)
+        channel_frame.pack(fill="x", pady=4)
+        for value, label in (("stable", "Versions stables"), ("experimental", "Versions expérimentales (alpha/beta)")):
+            tk.Radiobutton(channel_frame, text=label, value=value, variable=self.update_channel,
+                           command=self.change_update_channel, bg=PANEL, fg=FG,
+                           selectcolor=BG, activebackground=PANEL,
+                           activeforeground=FG).pack(anchor="w")
         self.update_status = tk.Label(self.update_panel, text=f"Version installée : {VERSION}",
                                       bg=PANEL, fg=FG, justify="left", anchor="w", wraplength=600)
         self.update_status.pack(fill="x", pady=5)
@@ -184,6 +192,12 @@ class Game(tk.Tk):
         self.state.save()
         self.destroy()
 
+    def change_update_channel(self):
+        self.latest_release = None
+        self.download_button.configure(state="disabled")
+        self.update_status.configure(text=f"Canal sélectionné : {self.update_channel.get()}")
+        self.check_updates()
+
     def check_updates(self):
         if self.update_busy:
             return
@@ -191,9 +205,10 @@ class Game(tk.Tk):
         self.check_button.configure(state="disabled")
         self.download_button.configure(state="disabled")
         self.update_status.configure(text="Recherche de la dernière version…")
+        channel = self.update_channel.get()
         def worker():
             try:
-                self.update_events.put(("checked", check_latest()))
+                self.update_events.put(("checked", check_latest(channel)))
             except Exception as exc:
                 self.update_events.put(("error", str(exc)))
         threading.Thread(target=worker, daemon=True).start()
