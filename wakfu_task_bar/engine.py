@@ -54,6 +54,7 @@ class GameState:
         self.equipped = list(DEFAULT_PRIORITY)
         self.pa, self.pw = 6, 2
         self.battle = None
+        self.room_exit = 0.0
         self.spawn_room()
 
     @property
@@ -65,6 +66,10 @@ class GameState:
         return DUNGEONS[self.dungeon_index]
 
     def spawn_room(self):
+        old_hero = getattr(self, "hero", None)
+        old_cooldowns = dict(old_hero.cooldowns) if old_hero and old_hero.alive else {}
+        old_uppercut = old_hero.uppercut_count if old_hero and old_hero.alive else 0
+        old_basic_progress = old_hero.basic_progress if old_hero and old_hero.alive else 1.0
         self.player_x = 60.0
         self.attack_timer = 0.0
         self.monsters = []
@@ -75,6 +80,9 @@ class GameState:
         self.hero.priority = list(self.priority)
         self.hero.equipped = list(self.equipped)
         self.hero.pa, self.hero.pw = self.pa, self.pw
+        self.hero.cooldowns = old_cooldowns
+        self.hero.uppercut_count = old_uppercut
+        self.hero.basic_progress = old_basic_progress
         enemies = []
         for i in range(count):
             monster = Monster(
@@ -88,6 +96,7 @@ class GameState:
                                    attack_animation=.5,attack_wait=1.4,
                                    radius=20 if boss else 0))
         self.battle = Battle([self.hero], enemies)
+        self.room_exit = 0.0
         self._sync_battle()
 
     def _sync_battle(self):
@@ -134,6 +143,15 @@ class GameState:
                 self.room = 0
                 self.spawn_room()
             return
+        if self.room_exit > 0:
+            self.room_exit -= dt
+            self.hero.x += 160 * dt
+            self.player_x = self.hero.x
+            for name in self.hero.cooldowns:
+                self.hero.cooldowns[name] = max(0, self.hero.cooldowns[name]-dt)
+            if self.room_exit <= 0:
+                self._advance_room()
+            return
         previous_kills = self.battle.monster_kills
         self.battle.tick(dt)
         self._sync_battle()
@@ -150,18 +168,22 @@ class GameState:
             self.respawn_timer = 1.0
             return
         if self.battle.finished and self.battle.winner == 1:
-            if self.room < len(self.dungeon["rooms"]):
-                self.room += 1
-                self.spawn_room()
-            else:
-                completed = self.dungeon_index
-                self.wins.add(completed)
-                self.message = "Donjon terminé : " + self.dungeon["name"]
-                if self.auto_progress and completed + 1 < len(DUNGEONS):
-                    self.dungeon_index += 1
-                self.room = 0
-                self.hp = self.max_hp
-                self.spawn_room()
+            self.room_exit = 0.8
+
+    def _advance_room(self):
+        if self.room < len(self.dungeon["rooms"]):
+            self.room += 1
+            self.spawn_room()
+        else:
+            completed = self.dungeon_index
+            self.wins.add(completed)
+            self.message = "Donjon terminé : " + self.dungeon["name"]
+            if self.auto_progress and completed + 1 < len(DUNGEONS):
+                self.dungeon_index += 1
+            self.room = 0
+            self.hp = self.max_hp
+            self.hero.alive = False
+            self.spawn_room()
 
     def to_dict(self):
         return {
