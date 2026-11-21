@@ -342,6 +342,11 @@ class Battle:
         if not action:
             return
         duration = actor.attack_animation if action=="monster_basic" else DURATION[action]
+        if self.finished:
+            actor.action_elapsed = min(duration, actor.action_elapsed + 3*dt)
+            if actor.action_elapsed >= duration - 1e-8:
+                self.finish(actor)
+            return
         old = actor.action_elapsed
         new = min(duration,old+dt)
         if action == "charge":
