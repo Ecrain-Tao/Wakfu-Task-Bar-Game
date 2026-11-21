@@ -6,6 +6,7 @@ from tkinter import ttk, filedialog, messagebox
 import threading
 import queue
 import sys
+from PIL import Image, ImageTk
 from pathlib import Path
 from wakfu_task_bar.installer import installed_macos_app, stage_macos_update
 from wakfu_task_bar.updater import VERSION, check_latest, download_asset
@@ -15,6 +16,8 @@ TICK_MS = 50
 BG = "#15232e"
 PANEL = "#223542"
 FG = "#e8e4d6"
+SPELL_NAMES = {"jabs": "Jabs", "uppercut": "Uppercut", "charge": "Charge",
+               "super_iop_punch": "Super Iop Punch", "wrath": "Colère du Iop"}
 
 
 class Game(tk.Tk):
@@ -67,7 +70,7 @@ class Game(tk.Tk):
         self.spell_priority = list(self.state.priority)
         self.spell_list = tk.Listbox(self.spell_panel, height=4, exportselection=False)
         for spell in self.spell_priority:
-            self.spell_list.insert("end", spell)
+            self.spell_list.insert("end", SPELL_NAMES.get(spell, spell))
         self.spell_list.pack(fill="x", pady=3)
         controls = tk.Frame(self.spell_panel, bg=PANEL)
         controls.pack(fill="x")
@@ -76,7 +79,7 @@ class Game(tk.Tk):
         for spell in self.spell_priority:
             var = tk.BooleanVar(value=spell in self.state.equipped)
             self.spell_vars[spell] = var
-            tk.Checkbutton(self.spell_panel, text=spell.replace("_", " ").title(),
+            tk.Checkbutton(self.spell_panel, text=SPELL_NAMES.get(spell, spell),
                            variable=var, command=self.apply_spells,
                            bg=PANEL, fg=FG, selectcolor=BG,
                            activebackground=PANEL, activeforeground=FG).pack(anchor="w")
@@ -221,18 +224,31 @@ class Game(tk.Tk):
 
     @staticmethod
     def load_sprites():
-        """Load optional idle PNGs; preserve placeholders until they are added."""
+        """Load static PNGs and alpha frames; missing assets retain placeholders."""
         base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
         sprites = {}
         for key in ("iop_idle", "chacha_idle"):
             path = base / "assets" / "sprites" / (key + ".png")
             try:
-                image = tk.PhotoImage(file=str(path))
-                factor = max(1, (image.width() + 51) // 52, (image.height() + 71) // 72)
-                sprites[key] = image.subsample(factor) if factor > 1 else image
-            except (tk.TclError, OSError):
-                pass
+                with Image.open(path) as original:
+                    image = original.convert("RGBA")
+                image.thumbnail((52, 72), Image.Resampling.LANCZOS)
+                sprites[key] = [
+                    ImageTk.PhotoImage(Image.blend(
+                        Image.new("RGBA", image.size, (0, 0, 0, 0)),
+                        image, opacity
+                    )) for opacity in (1, .75, .5, .25)
+                ]
+            except (OSError, ValueError) as exc:
+                print(f"Unable to load sprite {path}: {exc}", file=sys.stderr)
+        bg_path = base / "assets" / "sprites" / "AP_mere_michou.png"
+        try:
+            with Image.open(bg_path) as original:
+                sprites["background"] = original.convert("RGBA").copy()
+        except (OSError, ValueError) as exc:
+            print(f"Optional background unavailable {bg_path}: {exc}", file=sys.stderr)
         return sprites
+
 
     def download_update(self):
         if self.update_busy or not self.latest_release:
@@ -332,8 +348,17 @@ class Game(tk.Tk):
         all_x = [hero.x] + [m.x for m in enemies]
         extent = max(440, max(all_x, default=440) + 45)
         scale = min(1.0, max(.25, (w - 32) / extent))
-        c.create_rectangle(0, ground, w, h, fill="#29483b", outline="")
-        c.create_line(0, ground, w, ground, fill="#54765d", width=2)
+        background = self.sprites.get("background")
+        if background is not None:
+            # Tkinter Canvas keeps no image references: retain the resized image.
+            size = (w, h)
+            if getattr(self, "_bg_size", None) != size:
+                self._bg_size = size
+                self._bg_photo = ImageTk.PhotoImage(background.resize(size, Image.Resampling.LANCZOS))
+            c.create_image(0, 0, anchor="nw", image=self._bg_photo)
+        else:
+            c.create_rectangle(0, ground, w, h, fill="#29483b", outline="")
+            c.create_line(0, ground, w, ground, fill="#54765d", width=2)
 
         def draw_fighter(fighter, color, y_offset=0, front=False):
             x = fighter.x * scale
@@ -348,12 +373,19 @@ class Game(tk.Tk):
             if front:
                 c.create_oval(x-19,base-9,x+19,base+1,fill="#315c75",outline="#8ad5ff",width=2)
             sprite = self.sprites.get("iop_idle" if front else "chacha_idle")
-            if sprite and fighter.alive:
-                c.create_image(x, base-28-lift, image=sprite)
-            else:
+            opacity = max(0, min(1, fighter.fade)) if not fighter.alive else 1
+            if sprite:
+                frame = min(3, int((1-opacity)*4))
+                c.create_image(x, base-28-lift, image=sprite[frame])
+            elif fighter.alive:
                 c.create_oval(x-14,base-47-lift,x+14+stretch,base-8-lift,
-                              fill=color if fighter.alive else "#777777",
-                              outline="#ffffff" if front else "#d4e5e3",width=3 if front else 2)
+                              fill=color, outline="#ffffff" if front else "#d4e5e3",
+                              width=3 if front else 2)
+            elif opacity > 0:
+                # Shape fallback: stippled original color, never a grey corpse.
+                c.create_oval(x-14,base-47-lift,x+14+stretch,base-8-lift,
+                              fill=color, stipple="gray50" if opacity>.5 else "gray25",
+                              outline="")
             if action == "charge":
                 c.create_line(x-27,base-24,x-7,base-24,fill="#75c9f4",width=3)
             if fighter.alive:
@@ -366,9 +398,12 @@ class Game(tk.Tk):
             return x,base
 
         # Overlapping monsters remain separate in a visual depth stack.
+        # Back-to-front painter's order: monsters nearer the bottom are drawn LAST.
+        # Stable sorting keeps visual depth consistent for the same monsters.
         ordered_enemies = sorted(enemies, key=lambda m: m.x, reverse=True)
-        for i, monster in enumerate(ordered_enemies):
-            draw_fighter(monster,"#d37b72", -(i % 4)*28)
+        depth_by_id = {id(monster): i % 4 for i, monster in enumerate(ordered_enemies)}
+        for monster in sorted(ordered_enemies, key=lambda m: depth_by_id[id(m)], reverse=True):
+            draw_fighter(monster, "#d37b72", -depth_by_id[id(monster)]*28)
         if hero.action == "wrath":
             radius = 100 * scale
             x = hero.x * scale
@@ -388,8 +423,7 @@ class Game(tk.Tk):
                           font=("Arial",12,"bold"))
 
         # Compact cooldown display in the upper-left; never covers character names.
-        spell_names = {"jabs":"Jabs","uppercut":"Uppercut","charge":"Charge",
-                       "super_iop_punch":"Super Iop Punch","wrath":"Colère du Iop"}
+        spell_names = SPELL_NAMES
         equipped = [s for s in hero.priority if s in hero.equipped]
         lines = [("ATTAQUES / RECHARGES", "#f9df99")]
         if hero.action == "jabs":
