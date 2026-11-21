@@ -209,7 +209,7 @@ class Battle:
         actor.kills += 1
         if victim.side == 2:
             self.monster_kills += 1
-        self.emit("death",victim)
+        self.emit("death",victim,spell="")
         if not any(f.alive for f in self.opponents(actor)):
             self.finished = True
             self.winner = actor.side
@@ -307,7 +307,7 @@ class Battle:
                 if self.hit(actor,target,[("fire",8)],"melee",action):
                     actor.bonus_crit = 1
         elif action == "wrath":
-            if actor.impact_index == 0:
+            if actor.impact_index == 1:
                 actor.bonus_crit = 0
                 for m in list(actor.locked_targets):
                     if m.alive and self.hit(actor,m,[("fire",6)],"melee",action):
