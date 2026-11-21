@@ -71,12 +71,22 @@ jobs:
             exit 1
           fi
           VERSION="v${VERSION#v}"
-          if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ ! "${VERSION}" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta|rc)(\\.[0-9]+)?)?$ ]]; then
             echo "::error::Invalid release version: ${VERSION}"
             exit 1
+          fi
+          APP_VERSION="$(python -c 'from wakfu_task_bar.updater import VERSION; print(VERSION)')"
+          if [[ "${VERSION}" != "v${APP_VERSION}" ]]; then
+            echo "::error::Version mismatch: release ${VERSION}, app v${APP_VERSION}"
+            exit 1
+          fi
+          FLAGS=(--latest)
+          NOTES="Nouvelle version du jeu pour macOS Intel et Windows."
+          if [[ "${VERSION}" == *-* ]]; then
+            FLAGS=(--prerelease)
+            NOTES="Version expérimentale : moteur de combat Iop V1. Sauvegardez vos données avant de tester."
           fi
           gh release create "${VERSION}" release-files/*.zip \
             --repo Ecrain-Tao/Wakfu-Task-Bar-Game-Releases \
             --title "Wakfu Task Bar Game ${VERSION}" \
-            --notes "Nouvelle version du jeu pour macOS Intel et Windows." \
-            --latest
+            --notes "${NOTES}" "${FLAGS[@]}"
