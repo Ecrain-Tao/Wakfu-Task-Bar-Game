@@ -2,7 +2,7 @@ name: Build desktop apps
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/combat-iop-v1]
   workflow_dispatch:
 
 jobs:
