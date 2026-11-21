@@ -297,7 +297,7 @@ class Battle:
             element = ELEMENTS[actor.impact_index]
             if not target or not target.alive:
                 target = self.target(actor,40)
-            if target and self.distance(actor,target)<=40:
+            if target and target.alive:
                 self.hit(actor,target,[(element,1)],"melee",action)
         elif action == "uppercut":
             if target and target.alive:
