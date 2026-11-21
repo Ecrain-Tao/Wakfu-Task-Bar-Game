@@ -11,11 +11,12 @@ from .combat_v1 import Battle, Fighter, Stats, DEFAULT_PRIORITY
 SAVE_DIR = Path.home() / ".wakfu-task-bar-game"
 SAVE_FILE = SAVE_DIR / "save.json"
 
+# Donjon unique de la première version jouable.
 DUNGEONS = (
-    {"name": "Prairie des Bouftous", "level": 1, "rooms": (2, 3, 2), "enemy": "Bouftou", "hp": 35, "damage": 3, "xp": 10, "kamas": 3},
-    {"name": "Sous-bois des Tofus", "level": 4, "rooms": (3, 3, 4), "enemy": "Tofu", "hp": 27, "damage": 4, "xp": 12, "kamas": 4},
-    {"name": "Égouts d'Astrub", "level": 8, "rooms": (3, 4, 4), "enemy": "Larve", "hp": 54, "damage": 5, "xp": 18, "kamas": 6},
+    {"name": "Mère Michou", "level": 1, "rooms": (2, 3, 2),
+     "enemy": "Chacha", "hp": 35, "damage": 3, "xp": 10, "kamas": 3},
 )
+
 MAX_LEVEL = 35
 
 
