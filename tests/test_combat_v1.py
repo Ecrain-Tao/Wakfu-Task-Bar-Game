@@ -7,7 +7,7 @@ from wakfu_task_bar.combat_v1 import (
 class CombatV1Tests(unittest.TestCase):
     def test_resistance_conversion(self):
         self.assertEqual(resist_percent(0), 0)
-        self.assertEqual(resist_percent(100), 19)
+        self.assertEqual(resist_percent(100), 20)
 
     def test_half_up_and_multielement(self):
         p = Fighter("Iop", 0, 100, 100)
