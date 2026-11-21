@@ -32,7 +32,7 @@ jobs:
       - name: Run tests
         run: python -m unittest discover -s tests
       - name: Package
-        run: pyinstaller --noconfirm --clean --onefile --windowed --name Wakfu-Task-Bar-Game main.py
+        run: pyinstaller --noconfirm --clean --onefile --windowed --add-data 'assets/sprites:assets/sprites' --name Wakfu-Task-Bar-Game main.py
       - name: Create update archive
         shell: python
         run: |
