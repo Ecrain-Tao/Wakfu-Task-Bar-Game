@@ -269,17 +269,45 @@ class Game(tk.Tk):
         all_x = [state.player_x] + [m.x for m in state.monsters]
         extent = max(440, max(all_x, default=440) + 30)
         scale = min(1.0, max(0.25, (w - 35) / extent))
-        entities = [(state.player_x, state.hp, state.max_hp, "#5ea5db", "Iop")]
-        entities += [(m.x, m.hp, m.max_hp, "#d37b72", m.name) for m in state.monsters if m.hp > 0]
-        for x, hp, max_hp, color, name in entities:
-            x *= scale
-            c.create_oval(x - 14, ground - 47, x + 14, ground - 8,
-                          fill=color, outline="#d4e5e3", width=2)
-            c.create_rectangle(x - 21, ground - 58, x + 21, ground - 53,
-                               fill="#4c252c", outline="")
-            c.create_rectangle(x - 21, ground - 58, x - 21 + 42 * hp / max_hp,
-                               ground - 53, fill="#67c68a", outline="")
-            c.create_text(x, ground - 72, text=name, fill=FG, font=("Arial", 9))
+        hero = state.hero
+        entities = [(hero, "#5ea5db")]
+        entities += [(m, "#d37b72") for m in state.battle.monsters if m.alive or m.fade > 0]
+        for fighter, color in entities:
+            x = fighter.x * scale
+            if fighter.hp <= 0 and fighter.fade <= 0:
+                continue
+            attacking = bool(fighter.action)
+            action = fighter.action
+            duration = fighter.attack_animation if action == "monster_basic" else {
+                "jabs": .8, "uppercut": .6, "charge": .6,
+                "super_iop_punch": 1.0, "wrath": 1.5,
+            }.get(action, 1.0)
+            phase = fighter.action_elapsed / duration if attacking else 0
+            # Simple procedural pose placeholders until final character assets.
+            lift = 13 if action == "super_iop_punch" and .2 <= phase <= .8 else 0
+            stretch = 8 if action in ("jabs","uppercut","super_iop_punch") and phase > .35 else 0
+            body = color if fighter.alive else "#777777"
+            c.create_oval(x - 14, ground - 47 - lift, x + 14 + stretch,
+                          ground - 8 - lift, fill=body, outline="#d4e5e3", width=2)
+            if action == "wrath":
+                radius = 100 * scale
+                c.create_oval(x-radius, ground-30-radius, x+radius, ground-30+radius,
+                              outline="#f46d4e", width=3)
+            if action == "charge":
+                c.create_line(x-25,ground-25,x-5,ground-25,fill="#75c9f4",width=3)
+            if fighter.alive:
+                c.create_rectangle(x-21,ground-58-lift,x+21,ground-53-lift,
+                                   fill="#4c252c",outline="")
+                c.create_rectangle(x-21,ground-58-lift,
+                                   x-21+42*fighter.hp/max(1,fighter.max_hp),
+                                   ground-53-lift,fill="#67c68a",outline="")
+            c.create_text(x,ground-72-lift,text=fighter.name,fill=FG,font=("Arial",9))
+        if hero.action:
+            c.create_text(12,12,anchor="nw",text=f"Iop : {hero.action.replace('_',' ')}",
+                          fill="#f9df99",font=("Arial",10,"bold"))
+        if state.room_exit > 0:
+            c.create_text(w/2,20,text="Salle terminée !",fill="#8ae7a8",
+                          font=("Arial",14,"bold"))
 
     def tick(self):
         self.state.tick(TICK_MS / 1000)
