@@ -75,6 +75,7 @@ jobs:
             echo "::error::Invalid release version: ${VERSION}"
             exit 1
           fi
+          python -m pip install certifi
           APP_VERSION="$(python -c 'from wakfu_task_bar.updater import VERSION; print(VERSION)')"
           if [[ "${VERSION}" != "v${APP_VERSION}" ]]; then
             echo "::error::Version mismatch: release ${VERSION}, app v${APP_VERSION}"
