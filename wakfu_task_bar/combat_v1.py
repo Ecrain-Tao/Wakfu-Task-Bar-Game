@@ -120,6 +120,8 @@ class Fighter:
     last_attack_speed: float = 0
     charge_start: float = 0
     charge_destination: float = 0
+    charge_intercepted: bool = False
+    charge_last_target: object = None
     bonus_crit: float = 0
 
     def is_blocked(self, kind):
@@ -240,13 +242,16 @@ class Battle:
         if action == "charge":
             actor.charge_start = actor.x
             actor.charge_destination = target.x
+            actor.charge_last_target = target
+            actor.charge_intercepted = False
+        actor.bonus_crit = 0
         if action == "jabs" and actor.side == 1:
             actor.uppercut_count += 1
         if action == "charge":
             actor.uppercut_count += 1
-        if action == "jabs":
+        if action in ("jabs", "monster_basic"):
             actor.basic_progress = 0.0
-            actor.basic_started = True
+            actor.basic_started = False
         self.emit("start",actor,target,spell=action)
 
     def castable(self, actor, spell):
@@ -257,8 +262,6 @@ class Battle:
         return self.target(actor,RANGE[spell]) is not None
 
     def choose(self, actor):
-        if actor.is_blocked("spell") and actor.is_blocked("basic"):
-            return
         if actor.side == 1 and not actor.is_blocked("spell"):
             for spell in actor.priority:
                 if self.castable(actor,spell):
@@ -266,7 +269,7 @@ class Battle:
                     if spell == "uppercut":
                         actor.uppercut_count = 0
                     return
-        if not actor.is_blocked("basic") and actor.basic_progress >= 1:
+        if not actor.is_blocked("basic") and (not actor.basic_started or actor.basic_progress >= 1):
             target = self.target(actor,actor.reach)
             if target:
                 self.start(actor,"jabs" if actor.side==1 else "monster_basic",target)
@@ -342,21 +345,25 @@ class Battle:
         old = actor.action_elapsed
         new = min(duration,old+dt)
         if action == "charge":
-            target = actor.action_target
-            destination = target.x if target and target.alive else actor.charge_destination
-            actor.charge_destination = destination
-            progress = new/duration
-            proposed = actor.charge_start+(destination-actor.charge_start)*progress
-            # First living enemy crossed intercepts charge, regardless of original target.
-            direction = 1 if proposed>=actor.x else -1
-            blockers = [f for f in self.opponents(actor) if f.alive and (f.x-actor.x)*direction >= 0 and (f.x-proposed)*direction <= f.radius]
-            if blockers:
-                victim = min(blockers,key=lambda f:abs(f.x-actor.x))
-                actor.x = victim.x - direction*victim.radius
-                actor.action_target = victim
-                actor.charge_destination = actor.x
-            else:
-                actor.x = proposed
+            target = actor.charge_last_target
+            if target and target.alive:
+                actor.charge_destination = target.x
+            destination = actor.charge_destination
+            direction = 1 if destination >= actor.charge_start else -1
+            if not actor.charge_intercepted:
+                proposed = actor.charge_start + (destination-actor.charge_start) * (new/duration)
+                # Crossing an enemy hitbox stops the dash for the rest of the animation.
+                blockers = [f for f in self.opponents(actor) if f.alive
+                            and (f.x-actor.x)*direction >= -1e-7
+                            and (f.x-proposed)*direction <= f.radius+1e-7]
+                if blockers:
+                    victim = min(blockers,key=lambda f:abs(f.x-actor.x))
+                    actor.x = victim.x-direction*victim.radius
+                    actor.action_target = victim
+                    actor.charge_intercepted = True
+                else:
+                    actor.x = proposed
+                    actor.action_target = target
         if action == "jabs":
             moments = (.2,.4,.6,.8)
         elif action == "uppercut":
